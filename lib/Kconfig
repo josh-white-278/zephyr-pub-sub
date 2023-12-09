@@ -1,0 +1,5 @@
+menu "Libraries"
+
+rsource "pub_sub/Kconfig"
+
+endmenu

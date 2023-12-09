@@ -1,0 +1,17 @@
+menuconfig PUB_SUB
+	bool "Publish Subscribe"
+	select POLL
+	help
+	  Enables the publish subscribe messaging framework
+
+if PUB_SUB
+
+config PUB_SUB_DEFAULT_BROKER
+	bool "Default pub/sub broker"
+	default y
+
+config PUB_SUB_ALLOC_MAX_NUM
+	int "The maximum number of pub/sub allocators"
+	default 5
+
+endif
