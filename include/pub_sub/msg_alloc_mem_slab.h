@@ -26,10 +26,8 @@ extern "C" {
 	K_MEM_SLAB_DEFINE_STATIC(_pub_sub_mem_slab_##name,                                         \
 				 msg_size + PUB_SUB_MSG_OVERHEAD_NUM_BYTES, num_msgs,              \
 				 sizeof(uintptr_t));                                               \
-	static struct pub_sub_allocator name = {.allocate = pub_sub_allocate_from_mem_slab,        \
-						.free = pub_sub_free_for_mem_slab,                 \
-						.allocator_id = PUB_SUB_ALLOC_ID_INVALID,          \
-						.impl = &_pub_sub_mem_slab_##name}
+	static PUB_SUB_ALLOCATOR_DEFINE(name, pub_sub_allocate_from_mem_slab,                      \
+					pub_sub_free_for_mem_slab, &_pub_sub_mem_slab_##name)
 
 /**
  * @brief Initialize a memory slab based message allocator

@@ -7,6 +7,46 @@
 #include <stdlib.h>
 #include <helpers.h>
 
+struct static_allocator_info {
+	struct pub_sub_allocator *allocator;
+	size_t num_msgs;
+	size_t msg_size;
+};
+
+PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(static_mem_slab_allocator_0, 2, 64);
+PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(static_mem_slab_allocator_1, 4, 32);
+PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(static_mem_slab_allocator_2, 8, 16);
+PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(static_mem_slab_allocator_3, 16, 8);
+PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(static_mem_slab_allocator_4, 32, 4);
+
+const struct static_allocator_info static_allocator_info[5] = {
+	{
+		.allocator = &static_mem_slab_allocator_0,
+		.msg_size = 2,
+		.num_msgs = 64,
+	},
+	{
+		.allocator = &static_mem_slab_allocator_1,
+		.msg_size = 4,
+		.num_msgs = 32,
+	},
+	{
+		.allocator = &static_mem_slab_allocator_2,
+		.msg_size = 8,
+		.num_msgs = 16,
+	},
+	{
+		.allocator = &static_mem_slab_allocator_3,
+		.msg_size = 16,
+		.num_msgs = 8,
+	},
+	{
+		.allocator = &static_mem_slab_allocator_4,
+		.msg_size = 32,
+		.num_msgs = 4,
+	},
+};
+
 struct mem_slab_fixture {
 	struct pub_sub_allocator **allocators;
 	size_t *allocator_msg_sizes;
@@ -19,7 +59,7 @@ static void *mem_slab_suite_setup(void)
 	struct mem_slab_fixture *test_fixture = malloc(sizeof(struct mem_slab_fixture));
 	// Create the maximum number of mem_slab allocators of different msg sizes and number of
 	// msgs
-	test_fixture->num_allocators = CONFIG_PUB_SUB_ALLOC_MAX_NUM;
+	test_fixture->num_allocators = CONFIG_PUB_SUB_RUNTIME_ALLOCATORS_MAX_NUM;
 	test_fixture->allocators =
 		malloc(sizeof(*test_fixture->allocators) * test_fixture->num_allocators);
 	test_fixture->allocator_msg_sizes =
@@ -42,6 +82,9 @@ static void mem_slab_after_test(void *fixture)
 	for (size_t i = 0; i < test_fixture->num_allocators; i++) {
 		reset_mem_slab_allocator(test_fixture->allocators[i]);
 	}
+	ARRAY_FOR_EACH(static_allocator_info, i) {
+		reset_mem_slab_allocator(static_allocator_info[i].allocator);
+	}
 }
 
 static void mem_slab_suite_teardown(void *fixture)
@@ -56,7 +99,7 @@ static void mem_slab_suite_teardown(void *fixture)
 	free(test_fixture);
 }
 
-ZTEST_F(mem_slab, test_allocator_num_msgs)
+ZTEST_F(mem_slab, test_runtime_allocator_num_msgs)
 {
 	void *msg;
 	// Test allocating the maximum number of msgs from each allocator
@@ -70,7 +113,8 @@ ZTEST_F(mem_slab, test_allocator_num_msgs)
 					 "attempt: %u",
 					 i, fixture->allocator_num_msgs[i], j);
 			uint8_t alloc_id = pub_sub_msg_get_alloc_id(msg);
-			zassert_equal(alloc_id, i, "alloc_id: %u, i: %u", alloc_id, i);
+			zassert_equal(alloc_id, i + PUB_SUB_ALLOC_ID_RUNTIME_OFFSET,
+				      "alloc_id: %u, i: %u", alloc_id, i);
 		}
 		msg = pub_sub_new_msg(allocator, 0, fixture->allocator_msg_sizes[i], K_NO_WAIT);
 		zassert_is_null(
@@ -79,42 +123,109 @@ ZTEST_F(mem_slab, test_allocator_num_msgs)
 	}
 }
 
-ZTEST_F(mem_slab, test_allocator_ref_counts)
+ZTEST_F(mem_slab, test_static_allocator_num_msgs)
 {
-	void *msg = NULL;
-	struct pub_sub_allocator *allocator = fixture->allocators[0];
-	const size_t msg_size = fixture->allocator_msg_sizes[0];
-	const size_t num_msgs = fixture->allocator_num_msgs[0];
+	void *msg;
+	// Test allocating the maximum number of msgs from each allocator
+	ARRAY_FOR_EACH(static_allocator_info, i) {
+		struct pub_sub_allocator *allocator = static_allocator_info[i].allocator;
+		for (size_t j = 0; j < static_allocator_info[i].num_msgs; j++) {
+			msg = pub_sub_new_msg(allocator, 0, static_allocator_info[i].msg_size,
+					      K_NO_WAIT);
+			zassert_not_null(msg,
+					 "Allocator index: %u, allocator num msgs: %u, allocation "
+					 "attempt: %u",
+					 i, static_allocator_info[i].num_msgs, j);
+			uint8_t alloc_id = pub_sub_msg_get_alloc_id(msg);
+			zassert_equal(alloc_id, i, "alloc_id: %u, i: %u", alloc_id, i);
+		}
+		msg = pub_sub_new_msg(allocator, 0, static_allocator_info[i].msg_size, K_NO_WAIT);
+		zassert_is_null(msg,
+				"Allocator index: %u, allocator num msgs: %u, allocation "
+				"attempt: %u",
+				i, static_allocator_info[i].num_msgs,
+				static_allocator_info[i].num_msgs + 1);
+	}
+}
 
-	// Allocate all of the msgs
-	for (size_t i = 0; i < num_msgs; i++) {
+ZTEST_F(mem_slab, test_runtime_allocator_ref_counts)
+{
+	for (size_t i = 0; i < fixture->num_allocators; i++) {
+		void *msg = NULL;
+		struct pub_sub_allocator *allocator = fixture->allocators[i];
+		const size_t msg_size = fixture->allocator_msg_sizes[i];
+		const size_t num_msgs = fixture->allocator_num_msgs[i];
+
+		// Allocate all of the msgs
+		for (size_t i = 0; i < num_msgs; i++) {
+			msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
+			zassert_not_null(msg);
+		}
+		void *new_msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
+		zassert_is_null(new_msg);
+
+		// Decrement the ref count on the last msg returning it to the allocator
+		pub_sub_release_msg(msg);
+		// A msg can now be allocated
+		msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
+		zassert_not_null(msg);
+
+		// Increment and decrement the ref count on the msg
+		for (size_t i = 0; i < 10; i++) {
+			pub_sub_msg_inc_ref_cnt(msg);
+			pub_sub_release_msg(msg);
+		}
+
+		// The msg is still allocated and a new one can not be allocated
+		new_msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
+		zassert_is_null(new_msg);
+
+		// Decrement the ref count on the last msg returning it to the allocator
+		pub_sub_release_msg(msg);
+		// A msg can now be allocated
 		msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
 		zassert_not_null(msg);
 	}
-	void *new_msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
-	zassert_is_null(new_msg);
+}
 
-	// Decrement the ref count on the last msg returning it to the allocator
-	pub_sub_release_msg(msg);
-	// A msg can now be allocated
-	msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
-	zassert_not_null(msg);
+ZTEST_F(mem_slab, test_static_allocator_ref_counts)
+{
+	ARRAY_FOR_EACH(static_allocator_info, i) {
+		void *msg = NULL;
+		struct pub_sub_allocator *allocator = static_allocator_info[i].allocator;
+		const size_t msg_size = static_allocator_info[i].msg_size;
+		const size_t num_msgs = static_allocator_info[i].num_msgs;
 
-	// Increment and decrement the ref count on the msg
-	for (size_t i = 0; i < 10; i++) {
-		pub_sub_msg_inc_ref_cnt(msg);
+		// Allocate all of the msgs
+		for (size_t i = 0; i < num_msgs; i++) {
+			msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
+			zassert_not_null(msg);
+		}
+		void *new_msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
+		zassert_is_null(new_msg);
+
+		// Decrement the ref count on the last msg returning it to the allocator
 		pub_sub_release_msg(msg);
+		// A msg can now be allocated
+		msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
+		zassert_not_null(msg);
+
+		// Increment and decrement the ref count on the msg
+		for (size_t i = 0; i < 10; i++) {
+			pub_sub_msg_inc_ref_cnt(msg);
+			pub_sub_release_msg(msg);
+		}
+
+		// The msg is still allocated and a new one can not be allocated
+		new_msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
+		zassert_is_null(new_msg);
+
+		// Decrement the ref count on the last msg returning it to the allocator
+		pub_sub_release_msg(msg);
+		// A msg can now be allocated
+		msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
+		zassert_not_null(msg);
 	}
-
-	// The msg is still allocated and a new one can not be allocated
-	new_msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
-	zassert_is_null(new_msg);
-
-	// Decrement the ref count on the last msg returning it to the allocator
-	pub_sub_release_msg(msg);
-	// A msg can now be allocated
-	msg = pub_sub_new_msg(allocator, 0, msg_size, K_NO_WAIT);
-	zassert_not_null(msg);
 }
 
 ZTEST_F(mem_slab, test_allocator_add)

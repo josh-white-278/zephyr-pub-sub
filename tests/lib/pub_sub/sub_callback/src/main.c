@@ -25,13 +25,7 @@ enum msg_id {
 	MSG_ID_NUM_IDS,
 };
 
-static void *callbacks_suite_setup(void)
-{
-	struct callbacks_fixture *test_fixture = malloc(sizeof(struct callbacks_fixture));
-	test_fixture->allocator = malloc_mem_slab_allocator(TEST_MSG_SIZE_BYTES, 32);
-	pub_sub_add_runtime_allocator(test_fixture->allocator);
-	return test_fixture;
-}
+PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(test_allocator, TEST_MSG_SIZE_BYTES, 32);
 
 static void callbacks_before_test(void *fixture)
 {
@@ -39,16 +33,17 @@ static void callbacks_before_test(void *fixture)
 	reset_default_broker();
 }
 
-static void callbacks_suite_teardown(void *fixture)
+static void callbacks_after_test(void *fixture)
 {
-	struct callbacks_fixture *test_fixture = fixture;
-	free_mem_slab_allocator(test_fixture->allocator);
-	free(test_fixture);
+	ARG_UNUSED(fixture);
+	// Check for leaked messages
+	struct k_mem_slab *mem_slab = test_allocator.impl;
+	__ASSERT(k_mem_slab_num_used_get(mem_slab) == 0, "");
 }
 
-ZTEST_F(callbacks, test_add_remove_subscriber)
+ZTEST(callbacks, test_add_remove_subscriber)
 {
-	struct pub_sub_allocator *allocator = fixture->allocator;
+	struct pub_sub_allocator *allocator = &test_allocator;
 	struct callback_subscriber *c_subscriber = malloc_callback_subscriber(MSG_ID_NUM_IDS);
 	struct pub_sub_subscriber *subscriber = &c_subscriber->subscriber;
 	void *msg;
@@ -106,9 +101,9 @@ ZTEST_F(callbacks, test_add_remove_subscriber)
 	zassert_not_ok(ret);
 }
 
-ZTEST_F(callbacks, test_subscribing)
+ZTEST(callbacks, test_subscribing)
 {
-	struct pub_sub_allocator *allocator = fixture->allocator;
+	struct pub_sub_allocator *allocator = &test_allocator;
 	struct callback_subscriber *c_subscriber = malloc_callback_subscriber(MSG_ID_NUM_IDS);
 	struct pub_sub_subscriber *subscriber = &c_subscriber->subscriber;
 	void *msg;
@@ -166,9 +161,9 @@ ZTEST_F(callbacks, test_subscribing)
 	zassert_not_ok(ret);
 }
 
-ZTEST_F(callbacks, test_multi_subscriber)
+ZTEST(callbacks, test_multi_subscriber)
 {
-	struct pub_sub_allocator *allocator = fixture->allocator;
+	struct pub_sub_allocator *allocator = &test_allocator;
 	struct callback_subscriber *c_subscribers[4] = {};
 	void *msg;
 	struct rx_msg rx_msg;
@@ -260,9 +255,9 @@ static void priority_handler(uint16_t msg_id, const void *msg, void *user_data)
 	*priority_data->shared_last_priority_value = priority_data->subscriber->priority;
 }
 
-ZTEST_F(callbacks, test_priority)
+ZTEST(callbacks, test_priority)
 {
-	struct pub_sub_allocator *allocator = fixture->allocator;
+	struct pub_sub_allocator *allocator = &test_allocator;
 	struct callback_subscriber *c_subscribers[4] = {};
 	struct priority_data priority_data[4] = {};
 	uint8_t last_priority_value = 0;
@@ -293,5 +288,4 @@ ZTEST_F(callbacks, test_priority)
 	zassert_equal(last_priority_value, 4);
 }
 
-ZTEST_SUITE(callbacks, NULL, callbacks_suite_setup, callbacks_before_test, NULL,
-	    callbacks_suite_teardown);
+ZTEST_SUITE(callbacks, NULL, NULL, callbacks_before_test, callbacks_after_test, NULL);

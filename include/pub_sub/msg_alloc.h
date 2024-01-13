@@ -13,9 +13,15 @@ extern "C" {
 #include <zephyr/kernel.h>
 
 // Special allocator IDs
-#define PUB_SUB_ALLOC_ID_INVALID      0xFF
-#define PUB_SUB_ALLOC_ID_STATIC_MSG   0xFE
-#define PUB_SUB_ALLOC_ID_CALLBACK_MSG 0xFD
+#define PUB_SUB_ALLOC_ID_INVALID             0xFF
+#define PUB_SUB_ALLOC_ID_STATIC_MSG          0xFE
+#define PUB_SUB_ALLOC_ID_CALLBACK_MSG        0xFD
+#define PUB_SUB_ALLOC_ID_LINK_SECTION        0xFC
+#define PUB_SUB_ALLOC_ID_LINK_SECTION_MAX_ID 0x7F
+
+#ifdef CONFIG_PUB_SUB_RUNTIME_ALLOCATORS
+#define PUB_SUB_ALLOC_ID_RUNTIME_OFFSET 0x80
+#endif // CONFIG_PUB_SUB_RUNTIME_ALLOCATORS
 
 typedef void *(*pub_sub_alloc_fn)(void *impl, size_t msg_size_bytes, k_timeout_t timeout);
 typedef void (*pub_sub_free_fn)(void *impl, const void *msg);
@@ -26,6 +32,14 @@ struct pub_sub_allocator {
 	void *impl;
 	uint8_t allocator_id;
 };
+
+#define PUB_SUB_ALLOCATOR_DEFINE(name, allocate_fn, free_fn, _impl)                                \
+	STRUCT_SECTION_ITERABLE(pub_sub_allocator, name) = {                                       \
+		.allocate = allocate_fn,                                                           \
+		.free = free_fn,                                                                   \
+		.impl = _impl,                                                                     \
+		.allocator_id = PUB_SUB_ALLOC_ID_LINK_SECTION,                                     \
+	}
 
 /**
  * @brief Add a message allocator during run time
@@ -63,7 +77,16 @@ static inline void *pub_sub_new_msg(struct pub_sub_allocator *allocator, uint16_
 	__ASSERT(allocator->allocator_id != PUB_SUB_ALLOC_ID_INVALID, "");
 	void *msg = allocator->allocate(allocator->impl, msg_size_bytes, timeout);
 	if (msg != NULL) {
-		pub_sub_msg_init(msg, msg_id, allocator->allocator_id);
+		uint8_t allocator_id = allocator->allocator_id;
+		if (allocator_id == PUB_SUB_ALLOC_ID_LINK_SECTION) {
+			// Linker section allocators are in ROM and are all given the
+			// PUB_SUB_ALLOC_ID_LINK_SECTION id when they are defined. Therefore we need
+			// to calculate the real id from the allocator's index in the linker section
+			STRUCT_SECTION_START_EXTERN(pub_sub_allocator);
+			allocator_id = allocator - STRUCT_SECTION_START(pub_sub_allocator);
+			__ASSERT(allocator_id <= PUB_SUB_ALLOC_ID_LINK_SECTION_MAX_ID, "");
+		}
+		pub_sub_msg_init(msg, msg_id, allocator_id);
 	}
 	return msg;
 }

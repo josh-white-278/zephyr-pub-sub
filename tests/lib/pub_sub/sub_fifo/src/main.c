@@ -9,10 +9,6 @@
 
 #define TEST_MSG_SIZE_BYTES 8
 
-struct fifo_fixture {
-	struct pub_sub_allocator *allocator;
-};
-
 enum msg_id {
 	MSG_ID_SUBSCRIBED_ID_0,
 	MSG_ID_NOT_SUBSCRIBED_ID_0,
@@ -25,13 +21,7 @@ enum msg_id {
 	MSG_ID_NUM_IDS,
 };
 
-static void *fifo_suite_setup(void)
-{
-	struct fifo_fixture *test_fixture = malloc(sizeof(struct fifo_fixture));
-	test_fixture->allocator = malloc_mem_slab_allocator(TEST_MSG_SIZE_BYTES, 32);
-	pub_sub_add_runtime_allocator(test_fixture->allocator);
-	return test_fixture;
-}
+PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(test_allocator, TEST_MSG_SIZE_BYTES, 32);
 
 static void fifo_before_test(void *fixture)
 {
@@ -39,11 +29,12 @@ static void fifo_before_test(void *fixture)
 	reset_default_broker();
 }
 
-static void fifo_suite_teardown(void *fixture)
+static void fifo_after_test(void *fixture)
 {
-	struct fifo_fixture *test_fixture = fixture;
-	free_mem_slab_allocator(test_fixture->allocator);
-	free(test_fixture);
+	ARG_UNUSED(fixture);
+	// Check for leaked messages
+	struct k_mem_slab *mem_slab = test_allocator.impl;
+	__ASSERT(k_mem_slab_num_used_get(mem_slab) == 0, "");
 }
 
 struct msg_handler_data {
@@ -60,9 +51,9 @@ static void msg_handler(uint16_t msg_id, const void *msg, void *user_data)
 	}
 }
 
-ZTEST_F(fifo, test_add_remove_subscriber)
+ZTEST(fifo, test_add_remove_subscriber)
 {
-	struct pub_sub_allocator *allocator = fixture->allocator;
+	struct pub_sub_allocator *allocator = &test_allocator;
 	struct fifo_subscriber *f_subscriber = malloc_fifo_subscriber(MSG_ID_NUM_IDS);
 	struct pub_sub_subscriber *subscriber = &f_subscriber->subscriber;
 	struct msg_handler_data handler_data = {.msg_id = MSG_ID_SUBSCRIBED_ID_0};
@@ -109,9 +100,9 @@ ZTEST_F(fifo, test_add_remove_subscriber)
 	zassert_ok(ret);
 }
 
-ZTEST_F(fifo, test_subscribing)
+ZTEST(fifo, test_subscribing)
 {
-	struct pub_sub_allocator *allocator = fixture->allocator;
+	struct pub_sub_allocator *allocator = &test_allocator;
 	struct fifo_subscriber *f_subscriber = malloc_fifo_subscriber(MSG_ID_NUM_IDS);
 	struct pub_sub_subscriber *subscriber = &f_subscriber->subscriber;
 	struct msg_handler_data handler_data = {};
@@ -166,9 +157,9 @@ ZTEST_F(fifo, test_subscribing)
 	zassert_not_ok(ret);
 }
 
-ZTEST_F(fifo, test_multi_subscriber)
+ZTEST(fifo, test_multi_subscriber)
 {
-	struct pub_sub_allocator *allocator = fixture->allocator;
+	struct pub_sub_allocator *allocator = &test_allocator;
 	struct fifo_subscriber *f_subscribers[4] = {};
 	struct msg_handler_data handler_data = {};
 	void *msg;
@@ -243,9 +234,9 @@ ZTEST_F(fifo, test_multi_subscriber)
 	}
 }
 
-ZTEST_F(fifo, test_poll_evt)
+ZTEST(fifo, test_poll_evt)
 {
-	struct pub_sub_allocator *allocator = fixture->allocator;
+	struct pub_sub_allocator *allocator = &test_allocator;
 	const size_t num_msgs = 4;
 	struct fifo_subscriber *f_subscriber = malloc_fifo_subscriber(MSG_ID_NUM_IDS);
 	struct pub_sub_subscriber *subscriber = &f_subscriber->subscriber;
@@ -297,9 +288,9 @@ static void priority_handler(uint16_t msg_id, const void *msg, void *user_data)
 	*priority_data->shared_last_priority_value = priority_data->subscriber->priority;
 }
 
-ZTEST_F(fifo, test_priority)
+ZTEST(fifo, test_priority)
 {
-	struct pub_sub_allocator *allocator = fixture->allocator;
+	struct pub_sub_allocator *allocator = &test_allocator;
 	struct fifo_subscriber *f_subscribers[4] = {};
 	struct priority_data priority_data[4] = {};
 	uint8_t last_priority_value = 0;
@@ -333,4 +324,4 @@ ZTEST_F(fifo, test_priority)
 	zassert_equal(last_priority_value, 4);
 }
 
-ZTEST_SUITE(fifo, NULL, fifo_suite_setup, fifo_before_test, NULL, fifo_suite_teardown);
+ZTEST_SUITE(fifo, NULL, NULL, fifo_before_test, fifo_after_test, NULL);

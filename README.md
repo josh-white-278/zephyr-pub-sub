@@ -42,8 +42,8 @@ allocator will run out of messages to allocate.
 ### Initialization Order
 
 1. Broker initialized
-2. Allocators initialized
-3. Allocators added
+2. Runtime allocators initialized
+3. Runtime allocators added
 4. Subscribers initialized
 5. Subscribers configured
 6. Subscribers added to broker
@@ -54,10 +54,9 @@ A broker is responsible for managing message routing and acquiring/releasing mes
 its subscribers. It maintains a list of subscribers in order of priority. When a message is received
 on its publish queue it iterates through the list checking each subscriber's subscriptions. If a
 subscription is found the message is passed to the subscriber through its selected queuing
-mechanism. The broker maintains acquiring and releasing references to messages as required,
-subscribers should not have to worry about it unless they are manually acquiring additional
-references. Messages can only be published to a single broker due to the FIFO message queuing
-mechanism used by the broker.
+mechanism. The broker acquires and releases references to messages as required, subscribers should
+not have to worry about it unless they are manually acquiring additional references. Messages can
+only be published to a single broker due to the FIFO message queuing mechanism used by the broker.
 
 ### Default Broker
 
@@ -140,8 +139,12 @@ the message. Access to the message header values is provided via functions that 
 
 Messages are allocated from an allocator and track which allocator they belong to via an allocator
 id. Internally a list of allocators is maintained and the allocator id provides the index into the
-list for the allocator. Therefore an allocator must be added before messages can be allocated from
-it so that its allocator id can be set correctly.
+list for the allocator. A message allocator can be defined statically, for example using
+'PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC'. Statically defined allocators use a linker section to
+create the list of allocators for tracking purposes. Runtime allocators can also be used with the
+caveat that the allocator must be added to the runtime list of allocators before any messages are
+allocated from it. Adding the allocator assigns it an allocator id and without a valid allocator id
+messages can not be released back to the correct allocator.
 
 #### Supported allocator backends
 
@@ -167,7 +170,6 @@ within the callback.
 ## TODO List
 
 * Sample app
-* Linker section allocators
 * Publish to subscriber directly
 * Timer/delayable messages
 * Heap message allocator

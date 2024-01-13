@@ -10,8 +10,12 @@ config PUB_SUB_DEFAULT_BROKER
 	bool "Default pub/sub broker"
 	default y
 
-config PUB_SUB_ALLOC_MAX_NUM
-	int "The maximum number of pub/sub allocators"
+config PUB_SUB_RUNTIME_ALLOCATORS
+	bool "Runtime allocators"
+
+config PUB_SUB_RUNTIME_ALLOCATORS_MAX_NUM
+	int "The maximum number of runtime pub/sub allocators"
 	default 5
+	depends on PUB_SUB_RUNTIME_ALLOCATORS
 
 endif
