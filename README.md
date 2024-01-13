@@ -11,7 +11,7 @@ order published and three different types of subscriber message queuing are supp
 
 The normal message flow is:
 
-1. The publisher allocates a new message from the broker
+1. The publisher allocates a new message
 2. The publisher populates the message with the data it wants to send
 3. The publisher publishes the message to the broker
 4. If a subscriber has a subscription it receives the message in its message handler function
@@ -27,7 +27,7 @@ subscriptions.
 
 When a publisher allocates a message it acquires a reference to the message. The publisher must
 either publish the message to the broker thereby transferring ownership of its message reference to
-the broker or release the message returning it unpublished to the broker. After a publisher has
+the broker or release the message returning it unpublished to its allocator. After a publisher has
 published a message it must not modify the message as ownership has been transferred.
 
 When a subscriber receives a message it is const i.e. read only, the subscriber should not modify
@@ -35,36 +35,29 @@ any received messages as they are shared pointers with other subscribers.
 
 The broker does not transfer ownership of a message reference to the subscriber. If a subscriber
 wishes to retain a reference to a received message it must acquire one before the handler function
-returns. The acquired reference must be released back to the broker before the message can be
-re-used. If the aquired reference is dropped without being released then the message will leak and
-it is likely the broker will run out of messages to allocate.
+returns. The acquired reference must be released before the message can be re-used. If the aquired
+reference is dropped without being released then the message will leak and it is likely the
+allocator will run out of messages to allocate.
 
 ### Initialization Order
 
 1. Broker initialized
 2. Allocators initialized
-3. Allocators added to broker
+3. Allocators added
 4. Subscribers initialized
 5. Subscribers configured
 6. Subscribers added to broker
 
 ## Broker
 
-A broker is responsible for managing message allocation and message routing. It maintains a list of
-subscribers in order of priority. When a message is received on its publish queue it iterates
-through the list checking each subscriber's subscriptions. If a subscription is found the message is
-passed to the subscriber through its selected queuing mechanism. The broker maintains acquiring and
-releasing references to messages as required, subscribers should not have to worry about it unless
-they are manually acquiring additional references.
-
-Messages allocated from a broker must be published or released back to the same broker, this is due
-to how messages track which allocator they belong to. Even if two brokers share an allocator an
-allocated message can only be used with the broker it was allocated from. A static message can be
-published to any broker and can even be published to multiple brokers at the same time. If a static
-message is to be published to multiple brokers then an additional reference must be acquired for
-each additional broker before publishing the message to any broker. This is because publishing a
-message transfers ownership of a reference so the correct number of references must be owned before
-publishing can start.
+A broker is responsible for managing message routing and acquiring/releasing message references for
+its subscribers. It maintains a list of subscribers in order of priority. When a message is received
+on its publish queue it iterates through the list checking each subscriber's subscriptions. If a
+subscription is found the message is passed to the subscriber through its selected queuing
+mechanism. The broker maintains acquiring and releasing references to messages as required,
+subscribers should not have to worry about it unless they are manually acquiring additional
+references. Messages can only be published to a single broker due to the FIFO message queuing
+mechanism used by the broker.
 
 ### Default Broker
 
@@ -145,13 +138,10 @@ the message. Access to the message header values is provided via functions that 
 
 ### Message allocation
 
-Messages are allocated from a broker and are allocated based on size. Internally the broker
-maintains a sorted list of allocators and iterates through them until it finds one that can allocate
-a message large enough. All allocators should be added to a broker during initialization before any
-message have been allocated. Once a message has been allocated from a broker additional allocators
-must not be added to the broker. This is because each message tracks its allocator via its index in
-the broker's list of allocators. If an allocator is added it could be inserted into the list and any
-allocated messages could then have the incorrect index and be unable to be freed.
+Messages are allocated from an allocator and track which allocator they belong to via an allocator
+id. Internally a list of allocators is maintained and the allocator id provides the index into the
+list for the allocator. Therefore an allocator must be added before messages can be allocated from
+it so that its allocator id can be set correctly.
 
 #### Supported allocator backends
 
@@ -177,6 +167,7 @@ within the callback.
 ## TODO List
 
 * Sample app
+* Linker section allocators
 * Publish to subscriber directly
 * Timer/delayable messages
 * Heap message allocator

@@ -34,6 +34,7 @@ struct fifo_subscriber {
 };
 
 struct pub_sub_allocator *malloc_mem_slab_allocator(size_t msg_size, size_t num_msgs);
+void reset_mem_slab_allocator(struct pub_sub_allocator *allocator);
 void free_mem_slab_allocator(struct pub_sub_allocator *allocator);
 
 struct callback_subscriber *malloc_callback_subscriber(uint16_t max_msg_id);

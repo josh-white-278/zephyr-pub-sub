@@ -186,6 +186,34 @@ static inline void pub_sub_subscriber_set_priority(struct pub_sub_subscriber *su
 	subscriber->priority = priority;
 }
 
+/**
+ * @brief Handle a message for a subscriber
+ *
+ * Dequeues a message from the subscriber's internal message queue or fifo and then calls the
+ * subscriber's message handler function with the dequeued message.
+ *
+ * @param subscriber Address of the subscriber
+ * @param timeout How long to wait for a message
+ *
+ * @retval 0 if handled successfully
+ * @retval -ENOMSG If there was no message to handle within the specified timeout
+ * @retval -EPERM If the subscriber is a callback type
+ */
+int pub_sub_handle_queued_msg(struct pub_sub_subscriber *subscriber, k_timeout_t timeout);
+
+/**
+ * @brief Populate a k_poll_event from a subscriber
+ *
+ * Allows a subscriber's internal message queue or fifo to be polled for new messages
+ *
+ * @param subscriber Address of the subscriber
+ * @param poll_evt Address of poll event to populate
+ *
+ * @retval 0 Poll event populated successfully
+ * @retval -EPERM If the subscriber is a callback type
+ */
+int pub_sub_populate_poll_evt(struct pub_sub_subscriber *subscriber, struct k_poll_event *poll_evt);
+
 #ifdef __cplusplus
 }
 #endif

@@ -26,9 +26,9 @@ extern "C" {
 	K_MEM_SLAB_DEFINE_STATIC(_pub_sub_mem_slab_##name,                                         \
 				 msg_size + PUB_SUB_MSG_OVERHEAD_NUM_BYTES, num_msgs,              \
 				 sizeof(uintptr_t));                                               \
-	static struct pub_sub_allocator name = {.allocate = pub_sub_alloc_mem_slab,                \
-						.free = pub_sub_free_mem_slab,                     \
-						.max_msg_size = msg_size,                          \
+	static struct pub_sub_allocator name = {.allocate = pub_sub_allocate_from_mem_slab,        \
+						.free = pub_sub_free_for_mem_slab,                 \
+						.allocator_id = PUB_SUB_ALLOC_ID_INVALID,          \
 						.impl = &_pub_sub_mem_slab_##name}
 
 /**
@@ -42,17 +42,18 @@ extern "C" {
  * @param allocator Address of the allocator
  * @param mem_slab Address of the memory slab
  */
-void pub_sub_alloc_mem_slab_init(struct pub_sub_allocator *allocator, struct k_mem_slab *mem_slab);
+void pub_sub_init_mem_slab_allocator(struct pub_sub_allocator *allocator,
+				     struct k_mem_slab *mem_slab);
 
 /**
  * @brief Internal implementation, only exposed for PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC
  */
-void *pub_sub_alloc_mem_slab(void *impl, size_t msg_size_bytes, k_timeout_t timeout);
+void *pub_sub_allocate_from_mem_slab(void *impl, size_t msg_size_bytes, k_timeout_t timeout);
 
 /**
  * @brief Internal implementation, only exposed for PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC
  */
-void pub_sub_free_mem_slab(void *impl, const void *msg);
+void pub_sub_free_for_mem_slab(void *impl, const void *msg);
 #ifdef __cplusplus
 }
 #endif

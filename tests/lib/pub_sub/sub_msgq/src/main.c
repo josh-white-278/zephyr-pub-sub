@@ -7,14 +7,10 @@
 #include <stdlib.h>
 #include <helpers.h>
 
-struct allocator_info {
-	size_t msg_size;
-	size_t num_msgs;
-};
+#define TEST_MSG_SIZE_BYTES 8
 
 struct msg_queue_fixture {
-	struct allocator_info *alloc_infos;
-	size_t num_allocators;
+	struct pub_sub_allocator *allocator;
 };
 
 enum msg_id {
@@ -32,34 +28,21 @@ enum msg_id {
 static void *msg_queue_suite_setup(void)
 {
 	struct msg_queue_fixture *test_fixture = malloc(sizeof(struct msg_queue_fixture));
-	// Create three mem_slab allocators of different msg sizes and number of msgs
-	test_fixture->num_allocators = 3;
-	test_fixture->alloc_infos =
-		malloc(sizeof(*test_fixture->alloc_infos) * test_fixture->num_allocators);
-	for (size_t i = 0; i < test_fixture->num_allocators; i++) {
-		test_fixture->alloc_infos[i].msg_size = 8 << i;
-		test_fixture->alloc_infos[i].num_msgs = 16 >> i;
-	}
+	test_fixture->allocator = malloc_mem_slab_allocator(TEST_MSG_SIZE_BYTES, 32);
+	pub_sub_add_runtime_allocator(test_fixture->allocator);
 	return test_fixture;
 }
 
 static void msg_queue_before_test(void *fixture)
 {
-	struct msg_queue_fixture *test_fixture = fixture;
+	ARG_UNUSED(fixture);
 	reset_default_broker();
-	// Create the mem slab allocators for the test
-	for (size_t i = 0; i < test_fixture->num_allocators; i++) {
-		struct pub_sub_allocator *allocator =
-			malloc_mem_slab_allocator(test_fixture->alloc_infos[i].msg_size,
-						  test_fixture->alloc_infos[i].num_msgs);
-		pub_sub_add_allocator(allocator);
-	}
 }
 
 static void msg_queue_suite_teardown(void *fixture)
 {
 	struct msg_queue_fixture *test_fixture = fixture;
-	free(test_fixture->alloc_infos);
+	free_mem_slab_allocator(test_fixture->allocator);
 	free(test_fixture);
 }
 
@@ -79,6 +62,7 @@ static void msg_handler(uint16_t msg_id, const void *msg, void *user_data)
 
 ZTEST_F(msg_queue, test_add_remove_subscriber)
 {
+	struct pub_sub_allocator *allocator = fixture->allocator;
 	struct msgq_subscriber *m_subscriber = malloc_msgq_subscriber(MSG_ID_NUM_IDS, 4);
 	struct pub_sub_subscriber *subscriber = &m_subscriber->subscriber;
 	struct msg_handler_data handler_data = {.msg_id = MSG_ID_SUBSCRIBED_ID_0};
@@ -90,7 +74,7 @@ ZTEST_F(msg_queue, test_add_remove_subscriber)
 	pub_sub_add_subscriber(subscriber);
 	pub_sub_subscribe(subscriber, MSG_ID_SUBSCRIBED_ID_0);
 
-	msg = pub_sub_new_msg(MSG_ID_SUBSCRIBED_ID_0, 8, K_NO_WAIT);
+	msg = pub_sub_new_msg(allocator, MSG_ID_SUBSCRIBED_ID_0, TEST_MSG_SIZE_BYTES, K_NO_WAIT);
 	zassert_not_null(msg);
 	pub_sub_publish(msg);
 
@@ -102,7 +86,7 @@ ZTEST_F(msg_queue, test_add_remove_subscriber)
 	// Test that a removed subscriber stops receiving messages
 	pub_sub_subscriber_remove_broker(subscriber);
 
-	msg = pub_sub_new_msg(MSG_ID_SUBSCRIBED_ID_0, 8, K_NO_WAIT);
+	msg = pub_sub_new_msg(allocator, MSG_ID_SUBSCRIBED_ID_0, TEST_MSG_SIZE_BYTES, K_NO_WAIT);
 	zassert_not_null(msg);
 	pub_sub_publish(msg);
 
@@ -115,7 +99,7 @@ ZTEST_F(msg_queue, test_add_remove_subscriber)
 	// re-added to start receiving msgs again
 	pub_sub_add_subscriber(subscriber);
 
-	msg = pub_sub_new_msg(MSG_ID_SUBSCRIBED_ID_0, 8, K_NO_WAIT);
+	msg = pub_sub_new_msg(allocator, MSG_ID_SUBSCRIBED_ID_0, TEST_MSG_SIZE_BYTES, K_NO_WAIT);
 	zassert_not_null(msg);
 	pub_sub_publish(msg);
 
@@ -127,6 +111,7 @@ ZTEST_F(msg_queue, test_add_remove_subscriber)
 
 ZTEST_F(msg_queue, test_subscribing)
 {
+	struct pub_sub_allocator *allocator = fixture->allocator;
 	struct msgq_subscriber *m_subscriber = malloc_msgq_subscriber(MSG_ID_NUM_IDS, 4);
 	struct pub_sub_subscriber *subscriber = &m_subscriber->subscriber;
 	struct msg_handler_data handler_data = {};
@@ -147,7 +132,7 @@ ZTEST_F(msg_queue, test_subscribing)
 		MSG_ID_SUBSCRIBED_ID_3,     MSG_ID_NOT_SUBSCRIBED_ID_3,
 	};
 	for (size_t i = 0; i < ARRAY_SIZE(pub_ids); i++) {
-		msg = pub_sub_new_msg(pub_ids[i], 8, K_NO_WAIT);
+		msg = pub_sub_new_msg(allocator, pub_ids[i], TEST_MSG_SIZE_BYTES, K_NO_WAIT);
 		zassert_not_null(msg);
 		pub_sub_publish(msg);
 	}
@@ -165,7 +150,7 @@ ZTEST_F(msg_queue, test_subscribing)
 	pub_sub_unsubscribe(subscriber, MSG_ID_SUBSCRIBED_ID_1);
 	pub_sub_unsubscribe(subscriber, MSG_ID_SUBSCRIBED_ID_3);
 	for (size_t i = 0; i < ARRAY_SIZE(pub_ids); i++) {
-		msg = pub_sub_new_msg(pub_ids[i], 8, K_NO_WAIT);
+		msg = pub_sub_new_msg(allocator, pub_ids[i], TEST_MSG_SIZE_BYTES, K_NO_WAIT);
 		zassert_not_null(msg);
 		pub_sub_publish(msg);
 	}
@@ -183,6 +168,7 @@ ZTEST_F(msg_queue, test_subscribing)
 
 ZTEST_F(msg_queue, test_multi_subscriber)
 {
+	struct pub_sub_allocator *allocator = fixture->allocator;
 	struct msgq_subscriber *m_subscribers[4] = {};
 	struct msg_handler_data handler_data = {};
 	void *msg;
@@ -204,7 +190,7 @@ ZTEST_F(msg_queue, test_multi_subscriber)
 		MSG_ID_SUBSCRIBED_ID_3,     MSG_ID_NOT_SUBSCRIBED_ID_3,
 	};
 	for (size_t i = 0; i < ARRAY_SIZE(pub_ids); i++) {
-		msg = pub_sub_new_msg(pub_ids[i], 8, K_NO_WAIT);
+		msg = pub_sub_new_msg(allocator, pub_ids[i], TEST_MSG_SIZE_BYTES, K_NO_WAIT);
 		zassert_not_null(msg);
 		pub_sub_publish(msg);
 	}
@@ -233,7 +219,7 @@ ZTEST_F(msg_queue, test_multi_subscriber)
 
 	// Publish all of the messages
 	for (size_t i = 0; i < ARRAY_SIZE(pub_ids); i++) {
-		msg = pub_sub_new_msg(pub_ids[i], 8, K_NO_WAIT);
+		msg = pub_sub_new_msg(allocator, pub_ids[i], TEST_MSG_SIZE_BYTES, K_NO_WAIT);
 		zassert_not_null(msg);
 		pub_sub_publish(msg);
 	}
@@ -257,6 +243,7 @@ ZTEST_F(msg_queue, test_multi_subscriber)
 
 ZTEST_F(msg_queue, test_poll_evt)
 {
+	struct pub_sub_allocator *allocator = fixture->allocator;
 	const size_t num_msgs = 4;
 	struct msgq_subscriber *m_subscriber = malloc_msgq_subscriber(MSG_ID_NUM_IDS, 4);
 	struct pub_sub_subscriber *subscriber = &m_subscriber->subscriber;
@@ -271,7 +258,8 @@ ZTEST_F(msg_queue, test_poll_evt)
 	pub_sub_subscribe(subscriber, MSG_ID_SUBSCRIBED_ID_0);
 
 	for (size_t i = 0; i < num_msgs; i++) {
-		msg = pub_sub_new_msg(MSG_ID_SUBSCRIBED_ID_0, 8, K_NO_WAIT);
+		msg = pub_sub_new_msg(allocator, MSG_ID_SUBSCRIBED_ID_0, TEST_MSG_SIZE_BYTES,
+				      K_NO_WAIT);
 		zassert_not_null(msg);
 		pub_sub_publish(msg);
 	}
@@ -296,6 +284,7 @@ ZTEST_F(msg_queue, test_poll_evt)
 
 ZTEST_F(msg_queue, test_msgs_not_dropped)
 {
+	struct pub_sub_allocator *allocator = fixture->allocator;
 	const size_t num_msgs = 4;
 	struct msgq_subscriber *m_subscriber = malloc_msgq_subscriber(MSG_ID_NUM_IDS, 1);
 	struct pub_sub_subscriber *subscriber = &m_subscriber->subscriber;
@@ -309,7 +298,8 @@ ZTEST_F(msg_queue, test_msgs_not_dropped)
 	pub_sub_subscribe(subscriber, MSG_ID_SUBSCRIBED_ID_0);
 
 	for (size_t i = 0; i < num_msgs; i++) {
-		msg = pub_sub_new_msg(MSG_ID_SUBSCRIBED_ID_0, 8, K_NO_WAIT);
+		msg = pub_sub_new_msg(allocator, MSG_ID_SUBSCRIBED_ID_0, TEST_MSG_SIZE_BYTES,
+				      K_NO_WAIT);
 		zassert_not_null(msg);
 		pub_sub_publish(msg);
 	}

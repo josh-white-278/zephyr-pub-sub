@@ -9,7 +9,6 @@ static void process_msg(struct pub_sub_broker *broker, uint16_t msg_id, void *ms
 void pub_sub_init_broker(struct pub_sub_broker *broker)
 {
 	__ASSERT(broker != NULL, "");
-	pub_sub_alloc_init_allocators(&broker->allocators);
 	k_fifo_init(&broker->msg_publish_fifo);
 	k_work_poll_init(&broker->publish_work, publish_work_handler);
 	k_mutex_init(&broker->sub_list_mutex);
@@ -97,13 +96,13 @@ static void process_msg(struct pub_sub_broker *broker, uint16_t msg_id, void *ms
 				break;
 			}
 			case PUB_SUB_RX_TYPE_MSGQ: {
-				pub_sub_acquire(msg);
+				pub_sub_acquire_msg(msg);
 				k_msgq_put(sub->msgq, &msg, K_FOREVER);
 				break;
 			}
 			case PUB_SUB_RX_TYPE_FIFO: {
 				if (!fifo_sub_handled) {
-					pub_sub_acquire(msg);
+					pub_sub_acquire_msg(msg);
 					pub_sub_msg_fifo_put(&sub->fifo, msg);
 					fifo_sub_handled = true;
 				}
@@ -119,7 +118,7 @@ static void process_msg(struct pub_sub_broker *broker, uint16_t msg_id, void *ms
 		}
 	}
 	k_mutex_unlock(&broker->sub_list_mutex);
-	pub_sub_alloc_release(&broker->allocators, msg);
+	pub_sub_release_msg(msg);
 }
 
 #ifdef CONFIG_PUB_SUB_DEFAULT_BROKER

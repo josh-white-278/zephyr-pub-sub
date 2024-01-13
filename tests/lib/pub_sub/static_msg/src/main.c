@@ -54,7 +54,7 @@ ZTEST(static_msg, test_static_msg)
 	zassert_equal_ptr(g_static_msg, rx_msg.msg);
 	const struct static_msg *rx_msg_ptr = rx_msg.msg;
 	zassert_equal(rx_msg_ptr->test_data, 12345);
-	pub_sub_release(rx_msg.msg);
+	pub_sub_release_msg(rx_msg.msg);
 	zassert_equal(pub_sub_msg_get_ref_cnt(g_static_msg), 0);
 
 	// Test msg can be re-published after being reset
@@ -69,7 +69,7 @@ ZTEST(static_msg, test_static_msg)
 	zassert_equal_ptr(g_static_msg, rx_msg.msg);
 	rx_msg_ptr = rx_msg.msg;
 	zassert_equal(rx_msg_ptr->test_data, 54321);
-	pub_sub_release(rx_msg.msg);
+	pub_sub_release_msg(rx_msg.msg);
 	zassert_equal(pub_sub_msg_get_ref_cnt(g_static_msg), 0);
 }
 
@@ -100,7 +100,7 @@ ZTEST(static_msg, test_callback_msg)
 		zassert_equal_ptr(g_callback_msg, rx_msg.msg);
 		const struct static_msg *rx_msg_ptr = rx_msg.msg;
 		zassert_equal(rx_msg_ptr->test_data, 12345);
-		pub_sub_release(rx_msg.msg);
+		pub_sub_release_msg(rx_msg.msg);
 	}
 
 	// After the ref cnt hits zero the msg callback should be called once
@@ -126,7 +126,7 @@ ZTEST(static_msg, test_callback_msg)
 		zassert_equal_ptr(g_callback_msg, rx_msg.msg);
 		const struct static_msg *rx_msg_ptr = rx_msg.msg;
 		zassert_equal(rx_msg_ptr->test_data, 54321);
-		pub_sub_release(rx_msg.msg);
+		pub_sub_release_msg(rx_msg.msg);
 	}
 
 	// After the ref cnt hits zero the msg callback should be called once

@@ -15,13 +15,22 @@ struct pub_sub_allocator *malloc_mem_slab_allocator(size_t msg_size, size_t num_
 	struct pub_sub_allocator *allocator = malloc(sizeof(struct pub_sub_allocator));
 	k_mem_slab_init(mem_slab, buffer, PUB_SUB_MEM_SLAB_ALLOCATOR_BLOCK_SIZE(msg_size),
 			num_msgs);
-	pub_sub_alloc_mem_slab_init(allocator, mem_slab);
+	pub_sub_init_mem_slab_allocator(allocator, mem_slab);
 	return allocator;
+}
+
+void reset_mem_slab_allocator(struct pub_sub_allocator *allocator)
+{
+	struct k_mem_slab *mem_slab = allocator->impl;
+	k_mem_slab_init(mem_slab, mem_slab->buffer, mem_slab->info.block_size,
+			mem_slab->info.num_blocks);
 }
 
 void free_mem_slab_allocator(struct pub_sub_allocator *allocator)
 {
 	struct k_mem_slab *mem_slab = allocator->impl;
+	// Check all of mem_slab blocks are free to see if we have any leaks
+	__ASSERT(k_mem_slab_num_used_get(mem_slab) == 0, "");
 	free(mem_slab->buffer);
 	free(mem_slab);
 	free(allocator);
@@ -90,12 +99,7 @@ void teardown_pub_sub_broker(struct pub_sub_broker *broker)
 	// so we have to look inside and do it ourselves for test teardowns
 
 	zassert_ok(k_work_poll_cancel(&broker->publish_work));
-	// Free all of the mem slab allocators
-	for (size_t i = 0; i < broker->allocators.num_allocators; i++) {
-		free_mem_slab_allocator(broker->allocators.allocators[i]);
-		broker->allocators.allocators[i] = NULL;
-	}
-	broker->allocators.num_allocators = 0;
+
 	// Free all of the subscribers
 	sys_snode_t *node;
 	while ((node = sys_slist_get(&broker->subscribers)) != NULL) {
@@ -136,7 +140,7 @@ static void callback_msg_handler(uint16_t msg_id, const void *msg, void *user_da
 		.msg_id = msg_id,
 		.msg = msg,
 	};
-	pub_sub_acquire(msg);
+	pub_sub_acquire_msg(msg);
 	int ret = k_msgq_put(msgq, &rx_msg, K_FOREVER);
 	zassert_ok(ret);
 }

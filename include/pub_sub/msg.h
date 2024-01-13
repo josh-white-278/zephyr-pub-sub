@@ -29,7 +29,7 @@ struct pub_sub_msg {
 	// uint8_t allocator_id
 	// uint8_t ref_cnt
 	atomic_t atomic_data;
-	uintptr_t msg[]; // uintptr_t for alignment
+	uint8_t __aligned(sizeof(void *)) msg[];
 };
 
 /**
