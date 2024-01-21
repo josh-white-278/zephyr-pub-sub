@@ -22,7 +22,7 @@ enum msg_id {
 	MSG_ID_NOT_SUBSCRIBED_ID_2,
 	MSG_ID_SUBSCRIBED_ID_3,
 	MSG_ID_NOT_SUBSCRIBED_ID_3,
-	MSG_ID_NUM_IDS,
+	MSG_ID_MAX_PUB_ID = MSG_ID_NOT_SUBSCRIBED_ID_3,
 };
 
 PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(test_allocator, TEST_MSG_SIZE_BYTES, 32);
@@ -44,7 +44,7 @@ static void callbacks_after_test(void *fixture)
 ZTEST(callbacks, test_add_remove_subscriber)
 {
 	struct pub_sub_allocator *allocator = &test_allocator;
-	struct callback_subscriber *c_subscriber = malloc_callback_subscriber(MSG_ID_NUM_IDS);
+	struct callback_subscriber *c_subscriber = malloc_callback_subscriber(MSG_ID_MAX_PUB_ID);
 	struct pub_sub_subscriber *subscriber = &c_subscriber->subscriber;
 	void *msg;
 	struct rx_msg rx_msg;
@@ -104,7 +104,7 @@ ZTEST(callbacks, test_add_remove_subscriber)
 ZTEST(callbacks, test_subscribing)
 {
 	struct pub_sub_allocator *allocator = &test_allocator;
-	struct callback_subscriber *c_subscriber = malloc_callback_subscriber(MSG_ID_NUM_IDS);
+	struct callback_subscriber *c_subscriber = malloc_callback_subscriber(MSG_ID_MAX_PUB_ID);
 	struct pub_sub_subscriber *subscriber = &c_subscriber->subscriber;
 	void *msg;
 	struct rx_msg rx_msg;
@@ -171,7 +171,7 @@ ZTEST(callbacks, test_multi_subscriber)
 
 	// Create 4 subscribers all subscribed to a unique msg id
 	for (size_t i = 0; i < ARRAY_SIZE(c_subscribers); i++) {
-		c_subscribers[i] = malloc_callback_subscriber(MSG_ID_NUM_IDS);
+		c_subscribers[i] = malloc_callback_subscriber(MSG_ID_MAX_PUB_ID);
 		struct pub_sub_subscriber *subscriber = &c_subscribers[i]->subscriber;
 		pub_sub_add_subscriber(subscriber);
 		pub_sub_subscribe(subscriber, MSG_ID_SUBSCRIBED_ID_0 + i * 2);
@@ -265,7 +265,7 @@ ZTEST(callbacks, test_priority)
 
 	// Create 4 subscribers with different priority values
 	for (size_t i = 0; i < ARRAY_SIZE(c_subscribers); i++) {
-		c_subscribers[i] = malloc_callback_subscriber(MSG_ID_NUM_IDS);
+		c_subscribers[i] = malloc_callback_subscriber(MSG_ID_MAX_PUB_ID);
 		struct pub_sub_subscriber *subscriber = &c_subscribers[i]->subscriber;
 		priority_data[i].subscriber = subscriber;
 		priority_data[i].shared_last_priority_value = &last_priority_value;
@@ -286,6 +286,72 @@ ZTEST(callbacks, test_priority)
 	// of subscribers receiving the message
 	k_sleep(K_MSEC(1));
 	zassert_equal(last_priority_value, 4);
+}
+
+ZTEST(callbacks, test_publish_to_subscriber)
+{
+	struct pub_sub_allocator *allocator = &test_allocator;
+	struct callback_subscriber *c_subscribers[2] = {};
+	// Use the size of atomic to test the sizing of the bit array is correct
+	const uint16_t max_ids[] = {sizeof(atomic_t), sizeof(atomic_t) + 1};
+	void *msg;
+	struct rx_msg rx_msg;
+	int ret;
+
+	// Create 2 subscribers with different maximum public msg ids and have them subscribed to
+	// their max msg id
+	for (size_t i = 0; i < ARRAY_SIZE(c_subscribers); i++) {
+		c_subscribers[i] = malloc_callback_subscriber(max_ids[i]);
+		struct pub_sub_subscriber *subscriber = &c_subscribers[i]->subscriber;
+		pub_sub_add_subscriber(subscriber);
+		pub_sub_subscribe(subscriber, max_ids[i]);
+	}
+
+	// Publish a message to both max ids
+	for (size_t i = 0; i < ARRAY_SIZE(max_ids); i++) {
+		msg = pub_sub_new_msg(allocator, max_ids[i], TEST_MSG_SIZE_BYTES, K_NO_WAIT);
+		zassert_not_null(msg);
+		pub_sub_publish(msg);
+	}
+
+	// Each subscriber should receive a single msg with their msg id
+	for (size_t i = 0; i < ARRAY_SIZE(c_subscribers); i++) {
+		struct k_msgq *msgq = &c_subscribers[i]->msgq;
+		ret = k_msgq_get(
+			msgq, &rx_msg,
+			K_MSEC(1)); // Needs a small delay to allow the worker thread to run
+		zassert_ok(ret);
+		zassert_equal(max_ids[i], rx_msg.msg_id);
+		pub_sub_release_msg(rx_msg.msg);
+		// No other messages in the queue
+		ret = k_msgq_get(
+			msgq, &rx_msg,
+			K_MSEC(1)); // Needs a small delay to allow the worker thread to run
+		zassert_not_ok(ret);
+	}
+
+	// Publish a private message to each subscriber
+	for (size_t i = 0; i < ARRAY_SIZE(max_ids); i++) {
+		msg = pub_sub_new_msg(allocator, max_ids[i] + 1, TEST_MSG_SIZE_BYTES, K_NO_WAIT);
+		zassert_not_null(msg);
+		pub_sub_publish_to_subscriber(&c_subscribers[i]->subscriber, msg);
+	}
+
+	// Each subscriber should receive a single msg for their private msg id
+	for (size_t i = 0; i < ARRAY_SIZE(c_subscribers); i++) {
+		struct k_msgq *msgq = &c_subscribers[i]->msgq;
+		ret = k_msgq_get(
+			msgq, &rx_msg,
+			K_MSEC(1)); // Needs a small delay to allow the worker thread to run
+		zassert_ok(ret);
+		zassert_equal(max_ids[i] + 1, rx_msg.msg_id);
+		pub_sub_release_msg(rx_msg.msg);
+		// No other messages in the queue
+		ret = k_msgq_get(
+			msgq, &rx_msg,
+			K_MSEC(1)); // Needs a small delay to allow the worker thread to run
+		zassert_not_ok(ret);
+	}
 }
 
 ZTEST_SUITE(callbacks, NULL, NULL, callbacks_before_test, callbacks_after_test, NULL);

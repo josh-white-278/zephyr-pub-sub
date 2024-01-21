@@ -44,7 +44,7 @@ struct callback_subscriber *malloc_callback_subscriber(uint16_t max_msg_id)
 	k_msgq_init(&c_subscriber->msgq, (char *)c_subscriber->msgq_buffer,
 		    sizeof(c_subscriber->msgq_buffer[0]), ARRAY_SIZE(c_subscriber->msgq_buffer));
 	pub_sub_init_callback_subscriber(&c_subscriber->subscriber, c_subscriber->subs_bitarray,
-					 PUB_SUB_SUBS_BITARRAY_BYTE_LEN(max_msg_id));
+					 max_msg_id);
 	pub_sub_subscriber_set_handler_data(&c_subscriber->subscriber, callback_msg_handler,
 					    (void *)&c_subscriber->msgq);
 	return c_subscriber;
@@ -65,8 +65,7 @@ struct msgq_subscriber *malloc_msgq_subscriber(uint16_t max_msg_id, size_t msgq_
 	k_msgq_init(&m_subscriber->msgq, (char *)m_subscriber->msgq_buffer,
 		    PUB_SUB_RX_MSGQ_MSG_SIZE, msgq_len);
 	pub_sub_init_msgq_subscriber(&m_subscriber->subscriber, m_subscriber->subs_bitarray,
-				     PUB_SUB_SUBS_BITARRAY_BYTE_LEN(max_msg_id),
-				     &m_subscriber->msgq);
+				     max_msg_id, &m_subscriber->msgq);
 	return m_subscriber;
 }
 
@@ -83,7 +82,7 @@ struct fifo_subscriber *malloc_fifo_subscriber(uint16_t max_msg_id)
 	f_subscriber->subs_bitarray = malloc(PUB_SUB_SUBS_BITARRAY_BYTE_LEN(max_msg_id));
 
 	pub_sub_init_fifo_subscriber(&f_subscriber->subscriber, f_subscriber->subs_bitarray,
-				     PUB_SUB_SUBS_BITARRAY_BYTE_LEN(max_msg_id));
+				     max_msg_id);
 	return f_subscriber;
 }
 

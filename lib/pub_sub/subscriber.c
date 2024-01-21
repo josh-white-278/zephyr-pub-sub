@@ -5,36 +5,36 @@
 #include <string.h>
 
 static void common_subscriber_init(struct pub_sub_subscriber *subscriber, atomic_t *subs_bitarray,
-				   size_t subs_bitarray_len_bytes);
+				   uint16_t max_pub_msg_ids);
 static void send_to_next_fifo_subscriber(struct pub_sub_subscriber *subscriber, uint16_t msg_id,
 					 void *msg);
 
 void pub_sub_init_callback_subscriber(struct pub_sub_subscriber *subscriber,
-				      atomic_t *subs_bitarray, size_t subs_bitarray_len_bytes)
+				      atomic_t *subs_bitarray, uint16_t max_pub_msg_id)
 {
 	__ASSERT(subscriber != NULL, "");
 	__ASSERT(subs_bitarray != NULL, "");
-	common_subscriber_init(subscriber, subs_bitarray, subs_bitarray_len_bytes);
+	common_subscriber_init(subscriber, subs_bitarray, max_pub_msg_id);
 	subscriber->rx_type = PUB_SUB_RX_TYPE_CALLBACK;
 }
 
 void pub_sub_init_msgq_subscriber(struct pub_sub_subscriber *subscriber, atomic_t *subs_bitarray,
-				  size_t subs_bitarray_len_bytes, struct k_msgq *msgq)
+				  uint16_t max_pub_msg_id, struct k_msgq *msgq)
 {
 	__ASSERT(subscriber != NULL, "");
 	__ASSERT(msgq != NULL, "");
 	__ASSERT(subs_bitarray != NULL, "");
-	common_subscriber_init(subscriber, subs_bitarray, subs_bitarray_len_bytes);
+	common_subscriber_init(subscriber, subs_bitarray, max_pub_msg_id);
 	subscriber->msgq = msgq;
 	subscriber->rx_type = PUB_SUB_RX_TYPE_MSGQ;
 }
 
 void pub_sub_init_fifo_subscriber(struct pub_sub_subscriber *subscriber, atomic_t *subs_bitarray,
-				  size_t subs_bitarray_len_bytes)
+				  uint16_t max_pub_msg_id)
 {
 	__ASSERT(subscriber != NULL, "");
 	__ASSERT(subs_bitarray != NULL, "");
-	common_subscriber_init(subscriber, subs_bitarray, subs_bitarray_len_bytes);
+	common_subscriber_init(subscriber, subs_bitarray, max_pub_msg_id);
 	k_fifo_init(&subscriber->fifo);
 	subscriber->rx_type = PUB_SUB_RX_TYPE_FIFO;
 }
@@ -91,9 +91,11 @@ int pub_sub_handle_queued_msg(struct pub_sub_subscriber *subscriber, k_timeout_t
 			uint16_t msg_id = pub_sub_msg_get_msg_id(msg);
 			ret = 0;
 			__ASSERT(subscriber->handler_data.msg_handler != NULL, "");
-			// Pass the message to any other fifo subscribers further down the list then
-			// handle the message
-			send_to_next_fifo_subscriber(subscriber, msg_id, msg);
+			// If it is a public message pass it to any other fifo subscribers further
+			// down the list then handle the message
+			if (msg_id <= subscriber->max_pub_msg_id) {
+				send_to_next_fifo_subscriber(subscriber, msg_id, msg);
+			}
 			subscriber->handler_data.msg_handler(msg_id, msg,
 							     subscriber->handler_data.user_data);
 			pub_sub_release_msg(msg);
@@ -104,12 +106,38 @@ int pub_sub_handle_queued_msg(struct pub_sub_subscriber *subscriber, k_timeout_t
 	return ret;
 }
 
-static void common_subscriber_init(struct pub_sub_subscriber *subscriber, atomic_t *subs_bitarray,
-				   size_t subs_bitarray_len_bytes)
+void pub_sub_publish_to_subscriber(struct pub_sub_subscriber *subscriber, void *msg)
 {
-	memset(subs_bitarray, 0, subs_bitarray_len_bytes);
+	__ASSERT(subscriber != NULL, "");
+	__ASSERT(pub_sub_msg_get_msg_id(msg) > subscriber->max_pub_msg_id,
+		 "Public messages can not be published directly to subscriber");
+	switch (subscriber->rx_type) {
+	case PUB_SUB_RX_TYPE_CALLBACK: {
+		__ASSERT(subscriber->handler_data.msg_handler != NULL, "");
+		uint16_t msg_id = pub_sub_msg_get_msg_id(msg);
+		subscriber->handler_data.msg_handler(msg_id, msg,
+						     subscriber->handler_data.user_data);
+		pub_sub_release_msg(msg);
+		break;
+	}
+	case PUB_SUB_RX_TYPE_MSGQ: {
+		k_msgq_put(subscriber->msgq, &msg, K_FOREVER);
+		break;
+	}
+	case PUB_SUB_RX_TYPE_FIFO: {
+		pub_sub_msg_fifo_put(&subscriber->fifo, msg);
+		break;
+	}
+	}
+}
+
+static void common_subscriber_init(struct pub_sub_subscriber *subscriber, atomic_t *subs_bitarray,
+				   uint16_t max_pub_msg_id)
+{
+	memset(subs_bitarray, 0, PUB_SUB_SUBS_BITARRAY_BYTE_LEN(max_pub_msg_id));
 	subscriber->broker = NULL;
 	subscriber->subs_bitarray = subs_bitarray;
+	subscriber->max_pub_msg_id = max_pub_msg_id;
 	subscriber->priority = 0;
 }
 
@@ -124,7 +152,8 @@ static void send_to_next_fifo_subscriber(struct pub_sub_subscriber *subscriber, 
 	for (struct pub_sub_subscriber *next_sub =
 		     SYS_SLIST_PEEK_NEXT_CONTAINER(subscriber, sub_list_node);
 	     next_sub != NULL; next_sub = SYS_SLIST_PEEK_NEXT_CONTAINER(next_sub, sub_list_node)) {
-		if (atomic_test_bit(next_sub->subs_bitarray, msg_id)) {
+		if ((msg_id <= next_sub->max_pub_msg_id) &&
+		    atomic_test_bit(next_sub->subs_bitarray, msg_id)) {
 			pub_sub_acquire_msg(msg);
 			pub_sub_msg_fifo_put(&next_sub->fifo, msg);
 			break;

@@ -87,7 +87,8 @@ static void process_msg(struct pub_sub_broker *broker, uint16_t msg_id, void *ms
 	struct pub_sub_subscriber *sub, *tmp;
 	k_mutex_lock(&broker->sub_list_mutex, K_FOREVER);
 	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&broker->subscribers, sub, tmp, sub_list_node) {
-		if (atomic_test_bit(sub->subs_bitarray, msg_id)) {
+		if ((msg_id <= sub->max_pub_msg_id) &&
+		    atomic_test_bit(sub->subs_bitarray, msg_id)) {
 			switch (sub->rx_type) {
 			case PUB_SUB_RX_TYPE_CALLBACK: {
 				__ASSERT(sub->handler_data.msg_handler != NULL, "");

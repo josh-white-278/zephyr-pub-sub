@@ -9,7 +9,7 @@
 
 enum msg_id {
 	MSG_ID_SUBSCRIBED_ID_0,
-	MSG_ID_NUM_IDS,
+	MSG_ID_MAX_PUB_ID = MSG_ID_SUBSCRIBED_ID_0,
 };
 
 struct static_msg {
@@ -35,7 +35,7 @@ static void static_msg_before_test(void *fixture)
 
 ZTEST(static_msg, test_static_msg)
 {
-	struct callback_subscriber *c_subscriber = malloc_callback_subscriber(MSG_ID_NUM_IDS);
+	struct callback_subscriber *c_subscriber = malloc_callback_subscriber(MSG_ID_MAX_PUB_ID);
 	struct pub_sub_subscriber *subscriber = &c_subscriber->subscriber;
 	struct rx_msg rx_msg;
 	int ret;
@@ -81,7 +81,7 @@ ZTEST(static_msg, test_callback_msg)
 
 	// Create 4 subscribers and subscribe to the callback msg
 	for (size_t i = 0; i < ARRAY_SIZE(c_subscribers); i++) {
-		c_subscribers[i] = malloc_callback_subscriber(MSG_ID_NUM_IDS);
+		c_subscribers[i] = malloc_callback_subscriber(MSG_ID_MAX_PUB_ID);
 		struct pub_sub_subscriber *subscriber = &c_subscribers[i]->subscriber;
 		pub_sub_add_subscriber(subscriber);
 		pub_sub_subscribe(subscriber, MSG_ID_SUBSCRIBED_ID_0);

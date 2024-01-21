@@ -18,7 +18,7 @@ enum msg_id {
 	MSG_ID_NOT_SUBSCRIBED_ID_2,
 	MSG_ID_SUBSCRIBED_ID_3,
 	MSG_ID_NOT_SUBSCRIBED_ID_3,
-	MSG_ID_NUM_IDS,
+	MSG_ID_MAX_PUB_ID = MSG_ID_NOT_SUBSCRIBED_ID_3,
 };
 
 PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(test_allocator, TEST_MSG_SIZE_BYTES, 32);
@@ -54,7 +54,7 @@ static void msg_handler(uint16_t msg_id, const void *msg, void *user_data)
 ZTEST(fifo, test_add_remove_subscriber)
 {
 	struct pub_sub_allocator *allocator = &test_allocator;
-	struct fifo_subscriber *f_subscriber = malloc_fifo_subscriber(MSG_ID_NUM_IDS);
+	struct fifo_subscriber *f_subscriber = malloc_fifo_subscriber(MSG_ID_MAX_PUB_ID);
 	struct pub_sub_subscriber *subscriber = &f_subscriber->subscriber;
 	struct msg_handler_data handler_data = {.msg_id = MSG_ID_SUBSCRIBED_ID_0};
 	void *msg;
@@ -103,7 +103,7 @@ ZTEST(fifo, test_add_remove_subscriber)
 ZTEST(fifo, test_subscribing)
 {
 	struct pub_sub_allocator *allocator = &test_allocator;
-	struct fifo_subscriber *f_subscriber = malloc_fifo_subscriber(MSG_ID_NUM_IDS);
+	struct fifo_subscriber *f_subscriber = malloc_fifo_subscriber(MSG_ID_MAX_PUB_ID);
 	struct pub_sub_subscriber *subscriber = &f_subscriber->subscriber;
 	struct msg_handler_data handler_data = {};
 	void *msg;
@@ -167,7 +167,7 @@ ZTEST(fifo, test_multi_subscriber)
 
 	// Create 4 subscribers all subscribed to a unique msg id
 	for (size_t i = 0; i < ARRAY_SIZE(f_subscribers); i++) {
-		f_subscribers[i] = malloc_fifo_subscriber(MSG_ID_NUM_IDS);
+		f_subscribers[i] = malloc_fifo_subscriber(MSG_ID_MAX_PUB_ID);
 		struct pub_sub_subscriber *subscriber = &f_subscribers[i]->subscriber;
 		pub_sub_subscriber_set_handler_data(subscriber, msg_handler, &handler_data);
 		pub_sub_add_subscriber(subscriber);
@@ -238,7 +238,7 @@ ZTEST(fifo, test_poll_evt)
 {
 	struct pub_sub_allocator *allocator = &test_allocator;
 	const size_t num_msgs = 4;
-	struct fifo_subscriber *f_subscriber = malloc_fifo_subscriber(MSG_ID_NUM_IDS);
+	struct fifo_subscriber *f_subscriber = malloc_fifo_subscriber(MSG_ID_MAX_PUB_ID);
 	struct pub_sub_subscriber *subscriber = &f_subscriber->subscriber;
 	struct msg_handler_data handler_data = {};
 	struct k_poll_event poll_event;
@@ -298,7 +298,7 @@ ZTEST(fifo, test_priority)
 
 	// Create 4 subscribers with different priority values
 	for (size_t i = 0; i < ARRAY_SIZE(f_subscribers); i++) {
-		f_subscribers[i] = malloc_fifo_subscriber(MSG_ID_NUM_IDS);
+		f_subscribers[i] = malloc_fifo_subscriber(MSG_ID_MAX_PUB_ID);
 		struct pub_sub_subscriber *subscriber = &f_subscribers[i]->subscriber;
 		priority_data[i].subscriber = subscriber;
 		priority_data[i].shared_last_priority_value = &last_priority_value;
@@ -322,6 +322,67 @@ ZTEST(fifo, test_priority)
 		zassert_ok(ret);
 	}
 	zassert_equal(last_priority_value, 4);
+}
+
+ZTEST(fifo, test_publish_to_subscriber)
+{
+	struct pub_sub_allocator *allocator = &test_allocator;
+	struct fifo_subscriber *f_subscribers[2] = {};
+	struct msg_handler_data handler_data = {};
+	// Use the size of atomic to test the sizing of the bit array is correct
+	const uint16_t max_ids[] = {sizeof(atomic_t), sizeof(atomic_t) + 1};
+	void *msg;
+	int ret;
+
+	// Create 2 subscribers with different maximum public msg ids and have them subscribed to
+	// their max msg id
+	for (size_t i = 0; i < ARRAY_SIZE(f_subscribers); i++) {
+		f_subscribers[i] = malloc_fifo_subscriber(max_ids[i]);
+		struct pub_sub_subscriber *subscriber = &f_subscribers[i]->subscriber;
+		pub_sub_subscriber_set_handler_data(subscriber, msg_handler, &handler_data);
+		pub_sub_add_subscriber(subscriber);
+		pub_sub_subscribe(subscriber, max_ids[i]);
+	}
+
+	// Publish a message to both max ids
+	for (size_t i = 0; i < ARRAY_SIZE(max_ids); i++) {
+		msg = pub_sub_new_msg(allocator, max_ids[i], TEST_MSG_SIZE_BYTES, K_NO_WAIT);
+		zassert_not_null(msg);
+		pub_sub_publish(msg);
+	}
+
+	// Each subscriber should receive a single msg with their msg id
+	for (size_t i = 0; i < ARRAY_SIZE(f_subscribers); i++) {
+		handler_data.msg_id = max_ids[i];
+		// Needs a small delay to allow the worker thread to run
+		ret = pub_sub_handle_queued_msg(&f_subscribers[i]->subscriber, K_MSEC(1));
+		zassert_ok(ret);
+
+		// No other messages in the queue
+		// Needs a small delay to allow the worker thread to run
+		ret = pub_sub_handle_queued_msg(&f_subscribers[i]->subscriber, K_MSEC(1));
+		zassert_not_ok(ret);
+	}
+
+	// Publish a private message to each subscriber
+	for (size_t i = 0; i < ARRAY_SIZE(max_ids); i++) {
+		msg = pub_sub_new_msg(allocator, max_ids[i] + 1, TEST_MSG_SIZE_BYTES, K_NO_WAIT);
+		zassert_not_null(msg);
+		pub_sub_publish_to_subscriber(&f_subscribers[i]->subscriber, msg);
+	}
+
+	// Each subscriber should receive a single msg for their private msg id
+	for (size_t i = 0; i < ARRAY_SIZE(f_subscribers); i++) {
+		handler_data.msg_id = max_ids[i] + 1;
+		// Needs a small delay to allow the worker thread to run
+		ret = pub_sub_handle_queued_msg(&f_subscribers[i]->subscriber, K_MSEC(1));
+		zassert_ok(ret);
+
+		// No other messages in the queue
+		// Needs a small delay to allow the worker thread to run
+		ret = pub_sub_handle_queued_msg(&f_subscribers[i]->subscriber, K_MSEC(1));
+		zassert_not_ok(ret);
+	}
 }
 
 ZTEST_SUITE(fifo, NULL, NULL, fifo_before_test, fifo_after_test, NULL);

@@ -32,6 +32,7 @@ struct pub_sub_subscriber {
 	};
 	atomic_t *subs_bitarray;
 	enum pub_sub_rx_type rx_type;
+	uint16_t max_pub_msg_id;
 	// Priority is relative to other subscribers of the same type i.e. a low priority callback
 	// will always be higher priority than a high priority msgq.
 	// 0 is highest priority, 255 is lowest priority
@@ -39,7 +40,7 @@ struct pub_sub_subscriber {
 };
 
 #define PUB_SUB_SUBS_BITARRAY_BYTE_LEN(max_msg_id)                                                 \
-	(ATOMIC_BITMAP_SIZE(max_msg_id) * sizeof(atomic_t))
+	(ATOMIC_BITMAP_SIZE(max_msg_id + 1) * sizeof(atomic_t))
 
 /**
  * @brief Define a bitarray for a subscriber
@@ -65,46 +66,46 @@ struct pub_sub_subscriber {
  * @brief Initialize a callback type subscriber
  *
  * A subscriber must be initialized before it is used. The subscriptions bit array must be sized
- * correctly for the maximum message id that will be published. The PUB_SUB_SUBS_BITARRAY_* macros
- * can be used to assist with creating a subscriptions bit array of the correct length.
+ * correctly for the maximum message id that will be subscribed to. The PUB_SUB_SUBS_BITARRAY_*
+ * macros can be used to assist with creating a subscriptions bit array of the correct length.
  *
  * @param subscriber Address of the subscriber
  * @param subs_bitarray The subscriptions bit array to use to track subscriptions
- * @param subs_bitarray_len_bytes The length of the subscriptions bit array in bytes
+ * @param max_pub_msg_id The maximum message id that will be subscribed to
  */
 void pub_sub_init_callback_subscriber(struct pub_sub_subscriber *subscriber,
-				      atomic_t *subs_bitarray, size_t subs_bitarray_len_bytes);
+				      atomic_t *subs_bitarray, uint16_t max_pub_msg_id);
 
 /**
  * @brief Initialize a message queue type subscriber
  *
  * A subscriber must be initialized before it is used. The subscriptions bit array must be sized
- * correctly for the maximum message id that will be published. The PUB_SUB_SUBS_BITARRAY_* macros
- * can be used to assist with creating a subscriptions bit array of the correct length. The message
- * queue must be initialized and sized correctly for the publish subscribe framework. The
+ * correctly for the maximum message id that will be subscribed to. The PUB_SUB_SUBS_BITARRAY_*
+ * macros can be used to assist with creating a subscriptions bit array of the correct length. The
+ * message queue must be initialized and sized correctly for the publish subscribe framework. The
  * PUB_SUB_RX_MSGQ_* macros can be used to assist with creating a message queue for this purpose.
  *
  * @param subscriber Address of the subscriber
  * @param subs_bitarray The subscriptions bit array to use to track subscriptions
- * @param subs_bitarray_len_bytes The length of the subscriptions bit array in bytes
+ * @param max_pub_msg_id The maximum message id that will be subscribed to
  * @param msgq The message queue to use for queuing messages
  */
 void pub_sub_init_msgq_subscriber(struct pub_sub_subscriber *subscriber, atomic_t *subs_bitarray,
-				  size_t subs_bitarray_len_bytes, struct k_msgq *msgq);
+				  uint16_t max_pub_msg_id, struct k_msgq *msgq);
 
 /**
  * @brief Initialize a FIFO type subscriber
  *
  * A subscriber must be initialized before it is used. The subscriptions bit array must be sized
- * correctly for the maximum message id that will be published. The PUB_SUB_SUBS_BITARRAY_* macros
- * can be used to assist with creating a subscriptions bit array of the correct length.
+ * correctly for the maximum message id that will be subscribed to. The PUB_SUB_SUBS_BITARRAY_*
+ * macros can be used to assist with creating a subscriptions bit array of the correct length.
  *
  * @param subscriber Address of the subscriber
  * @param subs_bitarray The subscriptions bit array to use to track subscriptions
- * @param subs_bitarray_len_bytes The length of the subscriptions bit array in bytes
+ * @param max_pub_msg_id The maximum message id that will be subscribed to
  */
 void pub_sub_init_fifo_subscriber(struct pub_sub_subscriber *subscriber, atomic_t *subs_bitarray,
-				  size_t subs_bitarray_len_bytes);
+				  uint16_t max_pub_msg_id);
 
 /**
  * @brief Subscribe to a message id
@@ -118,6 +119,7 @@ static inline void pub_sub_subscribe(struct pub_sub_subscriber *subscriber, uint
 {
 	__ASSERT(subscriber != NULL, "");
 	__ASSERT(subscriber->subs_bitarray != NULL, "");
+	__ASSERT(msg_id <= subscriber->max_pub_msg_id, "");
 	atomic_set_bit(subscriber->subs_bitarray, msg_id);
 }
 
@@ -135,6 +137,7 @@ static inline void pub_sub_unsubscribe(struct pub_sub_subscriber *subscriber, ui
 {
 	__ASSERT(subscriber != NULL, "");
 	__ASSERT(subscriber->subs_bitarray != NULL, "");
+	__ASSERT(msg_id <= subscriber->max_pub_msg_id, "");
 	atomic_clear_bit(subscriber->subs_bitarray, msg_id);
 }
 
@@ -213,6 +216,21 @@ int pub_sub_handle_queued_msg(struct pub_sub_subscriber *subscriber, k_timeout_t
  * @retval -EPERM If the subscriber is a callback type
  */
 int pub_sub_populate_poll_evt(struct pub_sub_subscriber *subscriber, struct k_poll_event *poll_evt);
+
+/**
+ * @brief Publish a message directly to a subscriber
+ *
+ * Only private messages (message id greater than the subscriber's max public id) can be published
+ * directly to a subscriber. It bypasses the subscriber's subscription list and is always received.
+ *
+ * Publishing a message passes ownership of the message's reference to the subscriber i.e. after
+ * publish is called the memory pointed to by 'msg' should not be accessed again. A message can only
+ * be published to a single subscriber even if multiple references are owned.
+ *
+ * @param subscriber Address of the subscriber to publish to
+ * @param msg Address of the message to publish
+ */
+void pub_sub_publish_to_subscriber(struct pub_sub_subscriber *subscriber, void *msg);
 
 #ifdef __cplusplus
 }

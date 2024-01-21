@@ -26,18 +26,25 @@ routes messages to the subscribers based on the published message identifer and 
 subscriptions.
 
 When a publisher allocates a message it acquires a reference to the message. The publisher must
-either publish the message to the broker thereby transferring ownership of its message reference to
-the broker or release the message returning it unpublished to its allocator. After a publisher has
-published a message it must not modify the message as ownership has been transferred.
-
-When a subscriber receives a message it is const i.e. read only, the subscriber should not modify
-any received messages as they are shared pointers with other subscribers.
+either publish the message thereby transferring ownership of its message reference or release the
+message returning it unpublished to its allocator. After a publisher has published a message it must
+not modify the message as ownership has been transferred. When a subscriber receives a message it is
+const i.e. read only, the subscriber should not modify any received messages as they are shared
+pointers with other subscribers.
 
 The broker does not transfer ownership of a message reference to the subscriber. If a subscriber
 wishes to retain a reference to a received message it must acquire one before the handler function
 returns. The acquired reference must be released before the message can be re-used. If the aquired
 reference is dropped without being released then the message will leak and it is likely the
 allocator will run out of messages to allocate.
+
+Each subscriber splits the message id space into two, public message ids and private message ids.
+Public messages must be published to a broker and must be subscribed to by a subscriber to be
+received. Public message definitions are shared across subscribers and can be received by any
+subscriber on a broker. Private message ids are not subscribed to by a subscriber and are published
+directly to a subscriber. Private message are defined by the individual subscriber, a private
+message with the same id can have a completely different message definition between two different
+subscribers.
 
 ### Initialization Order
 
@@ -170,7 +177,6 @@ within the callback.
 ## TODO List
 
 * Sample app
-* Publish to subscriber directly
 * Timer/delayable messages
 * Heap message allocator
 * Ability to run the broker publish handling on a thread or a different work queue
