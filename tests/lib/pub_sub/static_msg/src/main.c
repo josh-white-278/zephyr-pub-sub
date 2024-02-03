@@ -33,74 +33,82 @@ static void static_msg_before_test(void *fixture)
 	reset_default_broker();
 }
 
+struct msg_handler_data {
+	uint16_t msg_id;
+	uint32_t data_value;
+	void *msg;
+};
+
+static void msg_handler(uint16_t msg_id, const void *msg, void *user_data)
+{
+	struct msg_handler_data *data = user_data;
+	const struct static_msg *static_msg = msg;
+	zassert_equal(msg_id, data->msg_id);
+	zassert_equal(static_msg->test_data, data->data_value);
+	zassert_equal_ptr(msg, data->msg);
+}
+
 ZTEST(static_msg, test_static_msg)
 {
-	struct callback_subscriber *c_subscriber = malloc_callback_subscriber(MSG_ID_MAX_PUB_ID);
-	struct pub_sub_subscriber *subscriber = &c_subscriber->subscriber;
-	struct rx_msg rx_msg;
+	struct fifo_subscriber *f_subscriber = malloc_fifo_subscriber(MSG_ID_MAX_PUB_ID);
+	struct pub_sub_subscriber *subscriber = &f_subscriber->subscriber;
+	struct msg_handler_data handler_data = {.msg_id = MSG_ID_SUBSCRIBED_ID_0,
+						.msg = g_static_msg};
 	int ret;
 
 	// Basic test that a subscriber receives a published static message
+	pub_sub_subscriber_set_handler_data(subscriber, msg_handler, &handler_data);
 	pub_sub_add_subscriber(subscriber);
 	pub_sub_subscribe(subscriber, MSG_ID_SUBSCRIBED_ID_0);
 
 	g_static_msg->test_data = 12345;
+	handler_data.data_value = 12345;
+	pub_sub_acquire_msg(g_static_msg);
 	pub_sub_publish(g_static_msg);
 
-	ret = k_msgq_get(&c_subscriber->msgq, &rx_msg,
-			 K_MSEC(1)); // Needs a small delay to allow the worker thread to run
+	// Needs a small delay to allow the worker thread to run
+	ret = pub_sub_handle_queued_msg(subscriber, K_MSEC(1));
 	zassert_ok(ret);
-	zassert_equal(MSG_ID_SUBSCRIBED_ID_0, rx_msg.msg_id);
-	zassert_equal_ptr(g_static_msg, rx_msg.msg);
-	const struct static_msg *rx_msg_ptr = rx_msg.msg;
-	zassert_equal(rx_msg_ptr->test_data, 12345);
-	pub_sub_release_msg(rx_msg.msg);
 	zassert_equal(pub_sub_msg_get_ref_cnt(g_static_msg), 0);
 
-	// Test msg can be re-published after being reset
-	pub_sub_static_msg_reset(g_static_msg);
+	// Test msg can be re-published
 	g_static_msg->test_data = 54321;
+	handler_data.data_value = 54321;
+	pub_sub_acquire_msg(g_static_msg);
 	pub_sub_publish(g_static_msg);
 
-	ret = k_msgq_get(&c_subscriber->msgq, &rx_msg,
-			 K_MSEC(1)); // Needs a small delay to allow the worker thread to run
+	// Needs a small delay to allow the worker thread to run
+	ret = pub_sub_handle_queued_msg(subscriber, K_MSEC(1));
 	zassert_ok(ret);
-	zassert_equal(MSG_ID_SUBSCRIBED_ID_0, rx_msg.msg_id);
-	zassert_equal_ptr(g_static_msg, rx_msg.msg);
-	rx_msg_ptr = rx_msg.msg;
-	zassert_equal(rx_msg_ptr->test_data, 54321);
-	pub_sub_release_msg(rx_msg.msg);
 	zassert_equal(pub_sub_msg_get_ref_cnt(g_static_msg), 0);
 }
 
 ZTEST(static_msg, test_callback_msg)
 {
-	struct callback_subscriber *c_subscribers[4] = {};
-	struct rx_msg rx_msg;
+	struct fifo_subscriber *f_subscribers[4] = {};
+	struct msg_handler_data handler_data = {.msg_id = MSG_ID_SUBSCRIBED_ID_0,
+						.msg = g_callback_msg};
 	int ret;
 
 	// Create 4 subscribers and subscribe to the callback msg
-	for (size_t i = 0; i < ARRAY_SIZE(c_subscribers); i++) {
-		c_subscribers[i] = malloc_callback_subscriber(MSG_ID_MAX_PUB_ID);
-		struct pub_sub_subscriber *subscriber = &c_subscribers[i]->subscriber;
+	for (size_t i = 0; i < ARRAY_SIZE(f_subscribers); i++) {
+		f_subscribers[i] = malloc_fifo_subscriber(MSG_ID_MAX_PUB_ID);
+		struct pub_sub_subscriber *subscriber = &f_subscribers[i]->subscriber;
+		pub_sub_subscriber_set_handler_data(subscriber, msg_handler, &handler_data);
 		pub_sub_add_subscriber(subscriber);
 		pub_sub_subscribe(subscriber, MSG_ID_SUBSCRIBED_ID_0);
 	}
 
 	g_callback_msg->test_data = 12345;
+	handler_data.data_value = 12345;
+	pub_sub_acquire_msg(g_callback_msg);
 	pub_sub_publish(g_callback_msg);
 
 	// Each subscriber should receive the callback msg
-	for (size_t i = 0; i < ARRAY_SIZE(c_subscribers); i++) {
-		ret = k_msgq_get(
-			&c_subscribers[i]->msgq, &rx_msg,
-			K_MSEC(1)); // Needs a small delay to allow the worker thread to run
+	for (size_t i = 0; i < ARRAY_SIZE(f_subscribers); i++) {
+		// Needs a small delay to allow the worker thread to run
+		ret = pub_sub_handle_queued_msg(&f_subscribers[i]->subscriber, K_MSEC(1));
 		zassert_ok(ret);
-		zassert_equal(MSG_ID_SUBSCRIBED_ID_0, rx_msg.msg_id);
-		zassert_equal_ptr(g_callback_msg, rx_msg.msg);
-		const struct static_msg *rx_msg_ptr = rx_msg.msg;
-		zassert_equal(rx_msg_ptr->test_data, 12345);
-		pub_sub_release_msg(rx_msg.msg);
 	}
 
 	// After the ref cnt hits zero the msg callback should be called once
@@ -109,24 +117,20 @@ ZTEST(static_msg, test_callback_msg)
 	zassert_ok(ret);
 	zassert_equal_ptr(g_callback_msg, callback_msg);
 	zassert_not_ok(k_msgq_get(&g_callback_msgq, &callback_msg, K_NO_WAIT));
-	// Reference counter should be reset back to 1 after callback
-	zassert_equal(pub_sub_msg_get_ref_cnt(g_callback_msg), 1);
+	// Reference counter should be reset back to 0 after callback
+	zassert_equal(pub_sub_msg_get_ref_cnt(g_callback_msg), 0);
 
 	// Test that the msg can be re-published after the callback has been called
 	g_callback_msg->test_data = 54321;
+	handler_data.data_value = 54321;
+	pub_sub_acquire_msg(g_callback_msg);
 	pub_sub_publish(g_callback_msg);
 
 	// Each subscriber should receive the callback msg
-	for (size_t i = 0; i < ARRAY_SIZE(c_subscribers); i++) {
-		ret = k_msgq_get(
-			&c_subscribers[i]->msgq, &rx_msg,
-			K_MSEC(1)); // Needs a small delay to allow the worker thread to run
+	for (size_t i = 0; i < ARRAY_SIZE(f_subscribers); i++) {
+		// Needs a small delay to allow the worker thread to run
+		ret = pub_sub_handle_queued_msg(&f_subscribers[i]->subscriber, K_MSEC(1));
 		zassert_ok(ret);
-		zassert_equal(MSG_ID_SUBSCRIBED_ID_0, rx_msg.msg_id);
-		zassert_equal_ptr(g_callback_msg, rx_msg.msg);
-		const struct static_msg *rx_msg_ptr = rx_msg.msg;
-		zassert_equal(rx_msg_ptr->test_data, 54321);
-		pub_sub_release_msg(rx_msg.msg);
 	}
 
 	// After the ref cnt hits zero the msg callback should be called once
@@ -134,8 +138,8 @@ ZTEST(static_msg, test_callback_msg)
 	zassert_ok(ret);
 	zassert_equal_ptr(g_callback_msg, callback_msg);
 	zassert_not_ok(k_msgq_get(&g_callback_msgq, &callback_msg, K_NO_WAIT));
-	// Reference counter should be reset back to 1 after callback
-	zassert_equal(pub_sub_msg_get_ref_cnt(g_callback_msg), 1);
+	// Reference counter should be reset back to 0 after callback
+	zassert_equal(pub_sub_msg_get_ref_cnt(g_callback_msg), 0);
 }
 
 ZTEST_SUITE(static_msg, NULL, NULL, static_msg_before_test, NULL, NULL);

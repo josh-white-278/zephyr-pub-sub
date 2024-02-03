@@ -18,7 +18,7 @@ BUILD_ASSERT(sizeof(atomic_t) >= 4);
 #define PUB_SUB_MSG_ATOMIC_DATA_INIT(msg_id, alloc_id)                                             \
 	ATOMIC_INIT(FIELD_PREP(PUB_SUB_MSG_ID_MASK, msg_id) |                                      \
 		    FIELD_PREP(PUB_SUB_MSG_ALLOC_MASK, alloc_id) |                                 \
-		    FIELD_PREP(PUB_SUB_MSG_REF_CNT_MASK, 1))
+		    FIELD_PREP(PUB_SUB_MSG_REF_CNT_MASK, 0))
 
 #define PUB_SUB_MSG_OVERHEAD_NUM_BYTES (sizeof(struct pub_sub_msg))
 
@@ -69,23 +69,6 @@ static inline uint8_t pub_sub_msg_get_ref_cnt(const void *msg)
 	__ASSERT(msg != NULL, "");
 	struct pub_sub_msg *ps_msg = CONTAINER_OF(msg, struct pub_sub_msg, msg);
 	return FIELD_GET(PUB_SUB_MSG_REF_CNT_MASK, atomic_get(&ps_msg->atomic_data));
-}
-
-/**
- * @brief Reset a publish subscribe message's reference counter value to 1
- *
- * @warning
- * Must only be called with messages that conform to the publish subscribe message memory layout
- * i.e. the message is preceded by the pub_sub_msg struct.
- *
- * @param msg Address of the message
- */
-static inline void pub_sub_msg_reset_ref_cnt(const void *msg)
-{
-	__ASSERT(msg != NULL, "");
-	struct pub_sub_msg *ps_msg = CONTAINER_OF(msg, struct pub_sub_msg, msg);
-	atomic_and(&ps_msg->atomic_data, ~(PUB_SUB_MSG_REF_CNT_MASK));
-	atomic_inc(&ps_msg->atomic_data);
 }
 
 /**

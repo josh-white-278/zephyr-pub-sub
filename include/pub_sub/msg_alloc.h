@@ -57,6 +57,29 @@ struct pub_sub_allocator {
 int pub_sub_add_runtime_allocator(struct pub_sub_allocator *allocator);
 
 /**
+ * @brief Acquire a reference to a message
+ *
+ * Every reference that is acquired must be released before the message will be freed.
+ *
+ * @param msg Address of the message to acquire
+ */
+static inline void pub_sub_acquire_msg(const void *msg)
+{
+	__ASSERT(msg != NULL, "");
+	pub_sub_msg_inc_ref_cnt(msg);
+}
+
+/**
+ * @brief Release a reference to a message
+ *
+ * Every acquired reference to a message must be released before it can be re-used. If a reference
+ * is ever dropped without being released then the message will leak.
+ *
+ * @param msg Address of the message to release
+ */
+void pub_sub_release_msg(const void *msg);
+
+/**
  * @brief Allocate a new message from an allocator
  *
  * Allocating a message acquires a reference to it. The message can then be used until the reference
@@ -87,33 +110,10 @@ static inline void *pub_sub_new_msg(struct pub_sub_allocator *allocator, uint16_
 			__ASSERT(allocator_id <= PUB_SUB_ALLOC_ID_LINK_SECTION_MAX_ID, "");
 		}
 		pub_sub_msg_init(msg, msg_id, allocator_id);
+		pub_sub_acquire_msg(msg);
 	}
 	return msg;
 }
-
-/**
- * @brief Acquire a reference to a message
- *
- * Every reference that is acquired must be released before the message will be freed.
- *
- * @param msg Address of the message to acquire
- */
-static inline void pub_sub_acquire_msg(const void *msg)
-{
-	__ASSERT(msg != NULL, "");
-	pub_sub_msg_inc_ref_cnt(msg);
-}
-
-/**
- * @brief Release a reference to a message
- *
- * Every acquired reference to a message must be released before it can be re-used. If a reference
- * is ever dropped without being released then the message will leak.
- *
- * @param msg Address of the message to release
- */
-void pub_sub_release_msg(const void *msg);
-
 #ifdef __cplusplus
 }
 #endif

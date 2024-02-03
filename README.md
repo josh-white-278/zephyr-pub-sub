@@ -161,10 +161,10 @@ messages can not be released back to the correct allocator.
 
 Statically allocated message can be sent through a broker provided it has reserved memory for the
 message header. Prior to being published the message must first be initialized and then it must be
-reset prior to every subsequent publish. When using static messages care must be taken by the
-publisher not to re-use the static message until it is certain that it has been fully handled by all
-of its subscribers. For regular static messages the reference counter should be checked, when it
-reaches zero the publisher can re-use it.
+aquired prior to every publish. When using static messages care must be taken by the publisher not
+to re-use the static message until it is certain that it has been fully handled by all of its
+subscribers. For regular static messages the reference counter should be checked, when it reaches
+zero the publisher can re-use it.
 
 ### Callback static messages
 

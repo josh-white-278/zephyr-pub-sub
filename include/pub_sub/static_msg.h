@@ -94,21 +94,6 @@ static inline void pub_sub_static_msg_init(void *msg, uint16_t msg_id)
 }
 
 /**
- * @brief Reset a static publish subscribe message's reference counter value to 1
- *
- * @warning
- * Must only be called with messages that conform to the publish subscribe message memory layout
- * i.e. the message is preceded by the pub_sub_msg struct.
- *
- * @param msg Address of the message
- */
-static inline void pub_sub_static_msg_reset(void *msg)
-{
-	__ASSERT(msg != NULL, "");
-	pub_sub_msg_reset_ref_cnt(msg);
-}
-
-/**
  * @brief Initialize a static callback publish subscribe message
  *
  * Initializes the message's reference counter to 1 and sets its message id and callback function to
@@ -138,8 +123,8 @@ static inline void pub_sub_callback_msg_init(void *msg, uint16_t msg_id,
  * @brief Free a static callback publish subscribe message
  *
  * This function is used by the publish subscribe framework when a callback message's reference
- * counter reaches 0. It resets the message's reference counter and then calls the message's
- * callback to notify the message's owner that the message is now free to be re-used.
+ * counter reaches 0. It calls the message's callback to notify the message's owner that the message
+ * is now free to be re-used.
  *
  * @warning
  * Must only be called with messages that conform to the callback publish subscribe message memory
@@ -154,9 +139,6 @@ static inline void pub_sub_free_callback_msg(const void *msg)
 	struct pub_sub_msg_callback *cb_msg =
 		CONTAINER_OF(ps_msg, struct pub_sub_msg_callback, pub_sub_msg);
 	__ASSERT(cb_msg->callback != NULL, "");
-	// Reset the message reference count and then call the callback indicating the message
-	// is free to be re-used.
-	pub_sub_msg_reset_ref_cnt(msg);
 	cb_msg->callback(msg);
 }
 
