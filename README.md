@@ -25,19 +25,6 @@ messages). A subscriber subscribes to the message identifiers it wants to receiv
 routes messages to the subscribers based on the published message identifer and the subscriber's
 subscriptions.
 
-When a publisher allocates a message it acquires a reference to the message. The publisher must
-either publish the message thereby transferring ownership of its message reference or release the
-message returning it unpublished to its allocator. After a publisher has published a message it must
-not modify the message as ownership has been transferred. When a subscriber receives a message it is
-const i.e. read only, the subscriber should not modify any received messages as they are shared
-pointers with other subscribers.
-
-The broker does not transfer ownership of a message reference to the subscriber. If a subscriber
-wishes to retain a reference to a received message it must acquire one before the handler function
-returns. The acquired reference must be released before the message can be re-used. If the aquired
-reference is dropped without being released then the message will leak and it is likely the
-allocator will run out of messages to allocate.
-
 Each subscriber splits the message id space into two, public message ids and private message ids.
 Public messages must be published to a broker and must be subscribed to by a subscriber to be
 received. Public message definitions are shared across subscribers and can be received by any
@@ -45,6 +32,24 @@ subscriber on a broker. Private message ids are not subscribed to by a subscribe
 directly to a subscriber. Private message are defined by the individual subscriber, a private
 message with the same id can have a completely different message definition between two different
 subscribers.
+
+When a publisher allocates a message it acquires a reference to the message. The publisher must
+either publish the message thereby transferring ownership of its message reference or release the
+message returning it unpublished to its allocator. Additionally due to the use of FIFOs for queuing
+messages a message must only be published once even if more than one reference to the message is
+owned.
+
+After a publisher has published a message it must not modify the message as ownership has been
+transferred. When a subscriber receives a message it is const i.e. read only, the subscriber should
+not modify any received messages as they are shared pointers with other subscribers. Private
+messages may be an exception to this rule as there will be only one subscriber receiving the
+message, however, it will depend on an application's specific use case.
+
+The broker does not transfer ownership of a message reference to the subscriber. If a subscriber
+wishes to retain a reference to a received message it must acquire one before the handler function
+returns. The acquired reference must be released before the message can be re-used. If the aquired
+reference is dropped without being released then the message will leak and it is likely the
+allocator will run out of messages to allocate.
 
 ### Initialization Order
 
@@ -147,7 +152,7 @@ the message. Access to the message header values is provided via functions that 
 Messages are allocated from an allocator and track which allocator they belong to via an allocator
 id. Internally a list of allocators is maintained and the allocator id provides the index into the
 list for the allocator. A message allocator can be defined statically, for example using
-'PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC'. Statically defined allocators use a linker section to
+`PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC`. Statically defined allocators use a linker section to
 create the list of allocators for tracking purposes. Runtime allocators can also be used with the
 caveat that the allocator must be added to the runtime list of allocators before any messages are
 allocated from it. Adding the allocator assigns it an allocator id and without a valid allocator id
@@ -174,10 +179,50 @@ callback is called to indicate the message is now free to be re-used. The callba
 the context of the last reference holder to release the message so care must be taken not to block
 within the callback.
 
-## TODO List
+### Delayable messages
+
+A delayable message is a static message that is scheduled to be published in the future. A delayable
+message is only published directly to a subscriber and so must have a private message id. The amount
+of time delayed is at least as much time as specified but could be greater depending on how fast a
+subscriber is processing its messages, the configured tick granularity etc. If high precision timing
+with low jitter is required by an application a delayable message will probably not be the tool for
+the job.
+
+A subscriber must process a delayable message before it times out a second time e.g. if a delayable
+message is queued with a subscriber and the message's timeout is restarted, the subscriber must
+process the queued message before the message's timeout triggers and attempts to queue the message
+a second time. The safest way to ensure this is to only start a delayable message from the
+subscriber when it is handling the delayable message itself. Depending on what the delayable message
+is being used for this may not be possible and, if so, care must be taken to ensure that the delays
+used are aligned to the general responsiveness of the subscriber i.e. the delays used are longer
+than the worse case subscriber message handling time.
+
+If a delayable message is aborted there is a chance that it is already in the subscriber's message
+queue and will still be received by the subscriber after the abort. Similarly for updating the
+timeout, if the message has already timed out but has not been processed by the subscriber then
+it may look like the message has timed out immediately as the subscriber will receive the message
+twice. Additionally updating or aborting a delayable message from a thread that is not the
+subscriber's thread has further edge cases as the subscriber may be processing the delayable message
+when the message is being updated/aborted from the other thread. Adding a cancelled/updated flag to
+the message and wrapping message accesses with a mutex in the multi-threaded case may be sufficient
+to mitigate these edge cases depending on the application's use case.
+
+## Additional Notes
+
+### Peer to peer messages
+
+An application may choose to split the message id space into three: public message ids, peer to peer
+message ids and private message ids. The functionality of peer to peer messages sits between public
+and private messages. Peer to peer messages are published to a single subscriber like a private
+message but they have shared message definitions and message ids like a public message. This concept
+allows things like many to one request/response messaging to be handled within the framework without
+having to add unique identifiers and filtering to the requests and responses. Additionally it can be
+used to reduce the size of an application's subscribers' subscription arrays and the message
+processing overhead for messages that are only received by a single subscriber.
+
+### TODO List
 
 * Sample app
-* Timer/delayable messages
 * Heap message allocator
 * Ability to run the broker publish handling on a thread or a different work queue
 * Different subscriber types other than bitmask, could be a callback

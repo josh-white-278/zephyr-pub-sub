@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+
+tests:
+  lib.pub_sub.delayable_msg:
+    tags: pub_sub
+    integration_platforms:
+      - native_sim

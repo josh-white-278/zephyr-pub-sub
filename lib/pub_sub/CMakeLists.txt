@@ -1,6 +1,7 @@
 if (CONFIG_PUB_SUB)
     zephyr_sources(
         broker.c
+        delayable_msg.c
         msg_alloc.c
         msg_alloc_mem_slab.c
         subscriber.c
