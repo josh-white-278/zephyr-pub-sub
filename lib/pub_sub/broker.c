@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <pub_sub/pub_sub.h>
+#include <zephyr/init.h>
 
 static void publish_work_handler(struct k_work *work);
 static void process_msg(struct pub_sub_broker *broker, uint16_t msg_id, void *msg);
