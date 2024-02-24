@@ -1,0 +1,13 @@
+menuconfig HSM
+	bool "Hierarchical State Machine"
+	select PUB_SUB
+	help
+	  Enables the hierarchical state machine framework
+
+if HSM
+
+config HSM_MAX_NESTED_STATES
+    int "The maximum number of nested states"
+    default 8
+
+endif

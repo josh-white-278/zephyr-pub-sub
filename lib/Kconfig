@@ -1,5 +1,6 @@
 menu "Libraries"
 
 rsource "pub_sub/Kconfig"
+rsource "hsm/Kconfig"
 
 endmenu

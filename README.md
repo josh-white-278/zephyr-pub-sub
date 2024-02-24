@@ -223,6 +223,8 @@ processing overhead for messages that are only received by a single subscriber.
 ### TODO List
 
 * Sample app
+* HSM documentation
+* Better initialization mechanics for HSMs and subscribers
 * Heap message allocator
 * Ability to run the broker publish handling on a thread or a different work queue
 * Different subscriber types other than bitmask, could be a callback

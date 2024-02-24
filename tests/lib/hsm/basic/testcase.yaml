@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+
+tests:
+  lib.hsm.basic:
+    tags: hsm
+    integration_platforms:
+      - native_sim
