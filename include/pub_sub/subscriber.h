@@ -48,7 +48,7 @@ struct pub_sub_subscriber {
  * @param name The name of the created bitarray
  * @param max_msg_id The maximum message id that will be published
  */
-#define PUB_SUB_SUBS_BITARRAY_DEFINE(name, max_msg_id) ATOMIC_DEFINE(name, max_msg_id)
+#define PUB_SUB_SUBS_BITARRAY_DEFINE(name, max_msg_id) ATOMIC_DEFINE(name, max_msg_id + 1)
 
 #define PUB_SUB_RX_MSGQ_MSG_SIZE             (sizeof(void *))
 #define PUB_SUB_RX_MSGQ_BUFFER_LEN(max_msgs) (max_msgs * PUB_SUB_RX_MSGQ_MSG_SIZE)

@@ -179,7 +179,7 @@ static inline void pub_sub_msg_fifo_put(struct k_fifo *fifo, const void *msg)
  */
 static inline void *pub_sub_msg_fifo_get(struct k_fifo *fifo, k_timeout_t timeout)
 {
-	struct pub_sub_msg *ps_msg = k_fifo_get(fifo, timeout);
+	struct pub_sub_msg *ps_msg = (struct pub_sub_msg *)k_fifo_get(fifo, timeout);
 	return ps_msg != NULL ? ps_msg->msg : NULL;
 }
 
