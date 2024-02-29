@@ -19,18 +19,6 @@ struct pub_sub_msg_delayable {
 };
 
 /**
- * @brief Wraps a message struct so that it can be used as a delayable publish subscribe message
- *
- * @param struct_name The name to give the wrapped struct
- * @param msg_type The type of the message to wrap
- */
-#define PUB_SUB_WRAP_DELAYABLE_MSG(struct_name, msg_type)                                          \
-	struct struct_name {                                                                       \
-		struct pub_sub_msg_delayable delayable_msg;                                        \
-		msg_type msg;                                                                      \
-	}
-
-/**
  * @brief Statically define and initialize a delayable publish subscribe message
  *
  * @param msg_type The type of the message
@@ -39,8 +27,12 @@ struct pub_sub_msg_delayable {
  * @param _subscriber The subscriber to publish to
  */
 #define PUB_SUB_STATIC_DELAYABLE_MSG_DEFINE(msg_type, var_name, msg_id, _subscriber)               \
-	PUB_SUB_WRAP_DELAYABLE_MSG(_delayable_msg_wrapped_##var_name, msg_type);                   \
-	static struct _delayable_msg_wrapped_##var_name _delayable_msg_wrapped_##var_name = {      \
+	union _delayable_msg_union_##var_name {                                                    \
+		struct pub_sub_msg_delayable delayable_msg;                                        \
+		uint8_t _msg_array[offsetof(struct pub_sub_msg_delayable, pub_sub_msg.msg) +       \
+				   sizeof(msg_type)];                                              \
+	};                                                                                         \
+	static union _delayable_msg_union_##var_name _delayable_msg_union_##var_name = {           \
 		.delayable_msg = {.timeout =                                                       \
 					  {                                                        \
 						  .node = {},                                      \
@@ -51,7 +43,8 @@ struct pub_sub_msg_delayable {
 				  .pub_sub_msg.atomic_data = PUB_SUB_MSG_ATOMIC_DATA_INIT(         \
 					  msg_id, PUB_SUB_ALLOC_ID_STATIC_MSG)},                   \
 	};                                                                                         \
-	static msg_type *var_name = &_delayable_msg_wrapped_##var_name.msg
+	static msg_type *var_name =                                                                \
+		(msg_type *)&_delayable_msg_union_##var_name.delayable_msg.pub_sub_msg.msg
 
 /**
  * @brief Internal implementation, only exposed for PUB_SUB_STATIC_DELAYABLE_MSG_DEFINE
