@@ -54,11 +54,12 @@ allocator will run out of messages to allocate.
 ### Initialization Order
 
 1. Broker initialized
-2. Runtime allocators initialized
-3. Runtime allocators added
-4. Subscribers initialized
-5. Subscribers configured
-6. Subscribers added to broker
+2. Runtime message allocators initialized
+3. Runtime message allocators added
+4. Message allocators added to allocator pools
+5. Subscribers initialized
+6. Subscribers configured
+7. Subscribers added to broker
 
 ## Broker
 
@@ -158,6 +159,14 @@ caveat that the allocator must be added to the runtime list of allocators before
 allocated from it. Adding the allocator assigns it an allocator id and without a valid allocator id
 messages can not be released back to the correct allocator.
 
+#### Message allocator pool
+
+Message allocators can be combined into an allocator pool. When an message is allocated from a pool
+the size of the message is used to select which allocator the message is allocated from i.e. the
+pool selects the allocator with the smallest maximum message size that can accommodate the new
+message. An allocator pool makes it more ergonomic to share allocators across an application at the
+cost of slightly less efficient message allocation.
+
 #### Supported allocator backends
 
 * Memory slab
@@ -224,6 +233,8 @@ processing overhead for messages that are only received by a single subscriber.
 
 * Sample app
 * HSM documentation
+* Change publish to callback subscriber so that it runs on the broker thread
+* Re-write delayable message so that it doesn't rely on z_*_timeout and to improve timeout behavior
 * Better initialization mechanics for HSMs and subscribers
 * Heap message allocator
 * Ability to run the broker publish handling on a thread or a different work queue

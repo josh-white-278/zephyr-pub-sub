@@ -4,6 +4,7 @@ if (CONFIG_PUB_SUB)
         delayable_msg.c
         msg_alloc.c
         msg_alloc_mem_slab.c
+        msg_alloc_pool.c
         subscriber.c
     )
 
