@@ -37,6 +37,7 @@ struct test_hsm {
 
 PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(test_allocator, TEST_MSG_SIZE_BYTES, 32);
 PUB_SUB_SUBS_BITARRAY_DEFINE(test_sub_bitarray, MSG_ID_MAX_PUB_ID);
+struct test_hsm test_hsm;
 
 static enum hsm_ret test_top_state(struct hsm *hsm, uint16_t msg_id, const void *msg)
 {
@@ -239,6 +240,8 @@ static void publish_msg(struct hsm *hsm, uint16_t msg_id)
 	void *msg = pub_sub_new_msg(&test_allocator, msg_id, TEST_MSG_SIZE_BYTES, K_NO_WAIT);
 	zassert_not_null(msg);
 	pub_sub_publish_to_subscriber(&hsm->subscriber, msg);
+	// Delay to allow HSM to run
+	k_sleep(K_MSEC(1));
 }
 
 static void publish_transition_state(struct hsm *hsm, uint16_t msg_id, hsm_state_fn dest_state)
@@ -248,11 +251,26 @@ static void publish_transition_state(struct hsm *hsm, uint16_t msg_id, hsm_state
 	zassert_not_null(msg);
 	msg->dest_state = dest_state;
 	pub_sub_publish_to_subscriber(&hsm->subscriber, msg);
+	// Delay to allow HSM to run
+	k_sleep(K_MSEC(1));
+}
+
+static void before_test(void *fixture)
+{
+	ARG_UNUSED(fixture);
+	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
+					 MSG_ID_MAX_PUB_ID);
+	hsm_init(&test_hsm.hsm, test_start_state);
+	pub_sub_add_subscriber(&test_hsm.hsm.subscriber);
+	hsm_start(&test_hsm.hsm);
+	test_hsm.num_msg_received = 0;
 }
 
 static void after_test(void *fixture)
 {
 	ARG_UNUSED(fixture);
+	pub_sub_subscriber_remove_broker(&test_hsm.hsm.subscriber);
+
 	// Check for leaked messages
 	struct k_mem_slab *mem_slab = test_allocator.impl;
 	__ASSERT(k_mem_slab_num_used_get(mem_slab) == 0, "");
@@ -260,10 +278,6 @@ static void after_test(void *fixture)
 
 ZTEST(hsm_basic, test_start)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
 	hsm_start(&test_hsm.hsm);
 	// Expect all parents and start state to have received entry message
 	zassert_equal(test_hsm.num_msg_received, 3);
@@ -277,13 +291,6 @@ ZTEST(hsm_basic, test_start)
 
 ZTEST(hsm_basic, test_current_state_rx)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_msg(&test_hsm.hsm, MSG_ID_TEST_START_RX);
 	zassert_equal(test_hsm.num_msg_received, 1);
 	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state);
@@ -292,13 +299,6 @@ ZTEST(hsm_basic, test_current_state_rx)
 
 ZTEST(hsm_basic, test_parent_state_rx)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_msg(&test_hsm.hsm, MSG_ID_TEST_SUB_STATE_RX);
 	zassert_equal(test_hsm.num_msg_received, 1);
 	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_sub_state);
@@ -307,13 +307,6 @@ ZTEST(hsm_basic, test_parent_state_rx)
 
 ZTEST(hsm_basic, test_top_state_rx)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_msg(&test_hsm.hsm, MSG_ID_TEST_TOP_STATE_RX);
 	zassert_equal(test_hsm.num_msg_received, 1);
 	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_top_state);
@@ -322,26 +315,12 @@ ZTEST(hsm_basic, test_top_state_rx)
 
 ZTEST(hsm_basic, test_unconsumed)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_msg(&test_hsm.hsm, MSG_ID_TEST_UNCONSUMED);
 	zassert_equal(test_hsm.num_msg_received, 0);
 }
 
 ZTEST(hsm_basic, test_transition_to_current)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_transition_state(&test_hsm.hsm, MSG_ID_TEST_TRANSITION_START_STATE,
 				 test_start_state);
 	zassert_equal(test_hsm.num_msg_received, 1);
@@ -357,13 +336,6 @@ ZTEST(hsm_basic, test_transition_to_current)
 
 ZTEST(hsm_basic, test_transition_to_child)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_transition_state(&test_hsm.hsm, MSG_ID_TEST_TRANSITION_START_STATE,
 				 test_start_child_state);
 	// We expect 2 msgs, MSG_ID_TEST_TRANSITION_START_STATE then ENTRY to child
@@ -382,13 +354,6 @@ ZTEST(hsm_basic, test_transition_to_child)
 
 ZTEST(hsm_basic, test_transition_to_child_of_child)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_transition_state(&test_hsm.hsm, MSG_ID_TEST_TRANSITION_START_STATE,
 				 test_start_child_of_child_state);
 	// We expect 3 msgs, MSG_ID_TEST_TRANSITION_START_STATE then ENTRY to child and child of
@@ -410,13 +375,6 @@ ZTEST(hsm_basic, test_transition_to_child_of_child)
 
 ZTEST(hsm_basic, test_transition_to_sibling)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_transition_state(&test_hsm.hsm, MSG_ID_TEST_TRANSITION_START_STATE,
 				 test_start_sibling_state);
 	// We expect 3 msgs, MSG_ID_TEST_TRANSITION_START_STATE then EXIT from start and ENTRY to
@@ -438,13 +396,6 @@ ZTEST(hsm_basic, test_transition_to_sibling)
 
 ZTEST(hsm_basic, test_transition_to_far_state)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_transition_state(&test_hsm.hsm, MSG_ID_TEST_TRANSITION_START_STATE, test_far_state);
 	// We expect 6 msgs:
 	// start_state: MSG_ID_TEST_TRANSITION_START_STATE
@@ -473,13 +424,6 @@ ZTEST(hsm_basic, test_transition_to_far_state)
 
 ZTEST(hsm_basic, test_transition_to_different_hsm)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_transition_state(&test_hsm.hsm, MSG_ID_TEST_TRANSITION_START_STATE,
 				 test_diff_child_state);
 	// We expect 6 msgs:
@@ -509,13 +453,6 @@ ZTEST(hsm_basic, test_transition_to_different_hsm)
 
 ZTEST(hsm_basic, test_transition_from_parent)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_transition_state(&test_hsm.hsm, MSG_ID_TEST_TRANSITION_SUB_STATE, test_far_state);
 	// We expect 6 msgs:
 	// sub_state: MSG_ID_TEST_TRANSITION_SUB_STATE
@@ -544,13 +481,6 @@ ZTEST(hsm_basic, test_transition_from_parent)
 
 ZTEST(hsm_basic, test_transition_from_top)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	hsm_start(&test_hsm.hsm);
-	test_hsm.num_msg_received = 0;
-
 	publish_transition_state(&test_hsm.hsm, MSG_ID_TEST_TRANSITION_TOP_STATE, test_far_state);
 	// We expect 6 msgs:
 	// top_state: MSG_ID_TEST_TRANSITION_TOP_STATE
@@ -601,9 +531,6 @@ static enum hsm_ret test_recursive_state(struct hsm *hsm, uint16_t msg_id, const
 
 ZTEST(hsm_basic, test_state_depth)
 {
-	struct test_hsm test_hsm = {};
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
 	hsm_init(&test_hsm.hsm, test_recursive_state);
 	hsm_start(&test_hsm.hsm);
 	// Expect CONFIG_HSM_MAX_NESTED_STATES start messages
@@ -647,4 +574,4 @@ ZTEST(hsm_basic, test_state_depth)
 	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_GET_CURRENT_STATE);
 }
 
-ZTEST_SUITE(hsm_basic, NULL, NULL, NULL, after_test, NULL);
+ZTEST_SUITE(hsm_basic, NULL, NULL, before_test, after_test, NULL);

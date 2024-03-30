@@ -233,7 +233,6 @@ processing overhead for messages that are only received by a single subscriber.
 
 * Sample app
 * HSM documentation
-* Change publish to callback subscriber so that it runs on the broker thread
 * Re-write delayable message so that it doesn't rely on z_*_timeout and to improve timeout behavior
 * Better initialization mechanics for HSMs and subscribers
 * Heap message allocator

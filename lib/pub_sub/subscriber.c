@@ -15,6 +15,7 @@ void pub_sub_init_callback_subscriber(struct pub_sub_subscriber *subscriber,
 	__ASSERT(subscriber != NULL, "");
 	__ASSERT(subs_bitarray != NULL, "");
 	common_subscriber_init(subscriber, subs_bitarray, max_pub_msg_id);
+	k_fifo_init(&subscriber->fifo);
 	subscriber->rx_type = PUB_SUB_RX_TYPE_CALLBACK;
 }
 
@@ -113,11 +114,9 @@ void pub_sub_publish_to_subscriber(struct pub_sub_subscriber *subscriber, void *
 		 "Public messages can not be published directly to subscriber");
 	switch (subscriber->rx_type) {
 	case PUB_SUB_RX_TYPE_CALLBACK: {
-		__ASSERT(subscriber->handler_data.msg_handler != NULL, "");
-		uint16_t msg_id = pub_sub_msg_get_msg_id(msg);
-		subscriber->handler_data.msg_handler(msg_id, msg,
-						     subscriber->handler_data.user_data);
-		pub_sub_release_msg(msg);
+		pub_sub_msg_fifo_put(&subscriber->fifo, msg);
+		__ASSERT(subscriber->broker != NULL, "");
+		k_sem_give(&subscriber->broker->callback_sem);
 		break;
 	}
 	case PUB_SUB_RX_TYPE_MSGQ: {

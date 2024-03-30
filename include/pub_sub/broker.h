@@ -11,12 +11,19 @@ extern "C" {
 #include <pub_sub/subscriber.h>
 #include <pub_sub/msg_alloc.h>
 
+enum pub_sub_broker_poll_events {
+	PUB_SUB_BROKER_PUB_FIFO_POLL_EVENT,
+	PUB_SUB_BROKER_CALLBACK_POLL_EVENT,
+	PUB_SUB_BROKER_NUM_POLL_EVENTS,
+};
+
 struct pub_sub_broker {
 	struct k_fifo msg_publish_fifo;
 	struct k_mutex sub_list_mutex;
 	sys_slist_t subscribers;
 	struct k_work_poll publish_work;
-	struct k_poll_event publish_work_poll_event;
+	struct k_poll_event poll_events[PUB_SUB_BROKER_NUM_POLL_EVENTS];
+	struct k_sem callback_sem;
 };
 
 /**
