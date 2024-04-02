@@ -106,18 +106,20 @@ static void callback_direct_publish_handler(struct pub_sub_broker *broker)
 			while (msg != NULL) {
 				// Need to take the semaphore for each msg published
 				int ret = k_sem_take(&broker->callback_sem, K_NO_WAIT);
-				__ASSERT(ret == 0, "");
+				if (ret != 0) {
+					break;
+				}
 				// Call the message handler and then release the message
 				uint16_t msg_id = pub_sub_msg_get_msg_id(msg);
 				sub->handler_data.msg_handler(msg_id, msg,
 							      sub->handler_data.user_data);
 				pub_sub_release_msg(msg);
-				// When the semaphore reaches 0 we are done
-				if (k_sem_count_get(&broker->callback_sem) == 0) {
-					break;
-				}
 				msg = pub_sub_msg_fifo_get(&sub->fifo, K_NO_WAIT);
 			}
+		}
+		// When the semaphore reaches 0 we are done
+		if (k_sem_count_get(&broker->callback_sem) == 0) {
+			break;
 		}
 	}
 	k_mutex_unlock(&broker->sub_list_mutex);
