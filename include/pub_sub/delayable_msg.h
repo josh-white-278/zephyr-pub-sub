@@ -12,7 +12,8 @@ extern "C" {
 #include <pub_sub/subscriber.h>
 
 struct pub_sub_msg_delayable {
-	struct _timeout timeout;
+	k_timepoint_t end_time;
+	sys_dnode_t node;
 	struct pub_sub_subscriber *subscriber;
 	// Must be last as the user msg follows
 	struct pub_sub_msg pub_sub_msg;
@@ -33,23 +34,13 @@ struct pub_sub_msg_delayable {
 				   sizeof(msg_type)];                                              \
 	};                                                                                         \
 	static union _delayable_msg_union_##var_name _delayable_msg_union_##var_name = {           \
-		.delayable_msg = {.timeout =                                                       \
-					  {                                                        \
-						  .node = {},                                      \
-						  .fn = pub_sub_delayable_msg_handler,             \
-						  .dticks = 0,                                     \
-					  },                                                       \
+		.delayable_msg = {.node = {},                                                      \
 				  .subscriber = _subscriber,                                       \
 				  .pub_sub_msg.atomic_data = PUB_SUB_MSG_ATOMIC_DATA_INIT(         \
 					  msg_id, PUB_SUB_ALLOC_ID_STATIC_MSG)},                   \
 	};                                                                                         \
 	static msg_type *var_name =                                                                \
 		(msg_type *)&_delayable_msg_union_##var_name.delayable_msg.pub_sub_msg.msg
-
-/**
- * @brief Internal implementation, only exposed for PUB_SUB_STATIC_DELAYABLE_MSG_DEFINE
- */
-void pub_sub_delayable_msg_handler(struct _timeout *t);
 
 /**
  * @brief Initialize a delayable publish subscribe message
@@ -67,36 +58,33 @@ void pub_sub_delayable_msg_init(void *msg, struct pub_sub_subscriber *subscriber
 /**
  * @brief Start the timer on a delayable publish subscribe message
  *
+ * Starting a delayable message that is already running is allowed, it is the same as aborting the
+ * message and then starting it again.
+ *
+ * @note This function will return -1 when starting the delayable message from the subscriber's
+ * message handler function when handling the delayable message itself. This is because the -1
+ * return value is based on the message's reference counter being greater than 0 which it always is
+ * when the subscriber is handling the message. In this case the return value of this function can
+ * be ignored and the double reception warning below does not apply.
+ *
  * @warning
  * Must only be called with messages that conform to the delayable message memory layout
- * i.e. the message is preceded by the pub_sub_msg_delayable struct.
+ * i.e. the message is preceded by the pub_sub_msg_delayable struct. Additionally the delayable
+ * message must be initialized with pub_sub_delayable_msg_init() before being started.
+ *
+ * @warning
+ * Starting a delayable message will not remove it from the subscriber's message queue/fifo if it
+ * has already timed out. If this function does not return 0 the subscriber will receive the
+ * delayable message twice, the first for the old timeout and the second for the just started
+ * timeout.
  *
  * @param msg Address of the message to start
- * @param delay The time to wait before publishing the message
- */
-void pub_sub_delayable_msg_start(const void *msg, k_timeout_t delay);
-
-/**
- * @brief Update the timeout delay of a delayable publish subscribe message
- *
- * Internally this function aborts the timer and then starts it with the new delay.
- *
- * @warning
- * Must only be called with messages that conform to the delayable message memory layout
- * i.e. the message is preceded by the pub_sub_msg_delayable struct.
- *
- * @warning
- * Updating a delayable message will not remove it from the subscriber's message queue/fifo if it
- * has already timed out. If this function does not return 0 the subscriber will receive the
- * delayable message twice, the first for the old delay and the second for the just updated delay.
- *
- * @param msg Address of the message to update
- * @param delay The new time to wait before publishing the message
+ * @param timeout The time to wait before publishing the message
  *
  * @retval 0 if successfully updated
- * @retval -EINVAL if the message has already timed out but has not been handled yet
+ * @retval -EBUSY if the message has already timed out but has not been handled yet
  */
-int pub_sub_delayable_msg_update_timeout(const void *msg, k_timeout_t delay);
+int pub_sub_delayable_msg_start(const void *msg, k_timeout_t timeout);
 
 /**
  * @brief Abort the publishing of a delayable publish subscribe message
@@ -113,9 +101,22 @@ int pub_sub_delayable_msg_update_timeout(const void *msg, k_timeout_t delay);
  * @param msg Address of the message to abort
  *
  * @retval 0 if successfully aborted
- * @retval -EINVAL if the message has already timed out but has not been handled yet
+ * @retval -EBUSY if the message has already timed out but has not been handled yet
  */
 int pub_sub_delayable_msg_abort(const void *msg);
+
+/**
+ * @brief Check if a delayable message has an active timeout
+ *
+ * @warning
+ * Must only be called with messages that conform to the delayable message memory layout
+ * i.e. the message is preceded by the pub_sub_msg_delayable struct.
+ *
+ * @param msg Address of the message to check
+ *
+ * @return true if the message has an active timeout, false if it does not
+ */
+bool pub_sub_delayable_msg_is_active(const void *msg);
 
 #ifdef __cplusplus
 }

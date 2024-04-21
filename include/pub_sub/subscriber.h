@@ -230,7 +230,7 @@ int pub_sub_populate_poll_evt(struct pub_sub_subscriber *subscriber, struct k_po
  * @param subscriber Address of the subscriber to publish to
  * @param msg Address of the message to publish
  */
-void pub_sub_publish_to_subscriber(struct pub_sub_subscriber *subscriber, void *msg);
+void pub_sub_publish_to_subscriber(struct pub_sub_subscriber *subscriber, const void *msg);
 
 #ifdef __cplusplus
 }

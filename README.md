@@ -35,7 +35,7 @@ subscribers.
 
 When a publisher allocates a message it acquires a reference to the message. The publisher must
 either publish the message thereby transferring ownership of its message reference or release the
-message returning it unpublished to its allocator. Additionally due to the use of FIFOs for queuing
+message returning it unpublished to its allocator. Additionally, due to the use of FIFOs for queuing
 messages a message must only be published once even if more than one reference to the message is
 owned.
 
@@ -197,24 +197,15 @@ subscriber is processing its messages, the configured tick granularity etc. If h
 with low jitter is required by an application a delayable message will probably not be the tool for
 the job.
 
-A subscriber must process a delayable message before it times out a second time e.g. if a delayable
-message is queued with a subscriber and the message's timeout is restarted, the subscriber must
-process the queued message before the message's timeout triggers and attempts to queue the message
-a second time. The safest way to ensure this is to only start a delayable message from the
-subscriber when it is handling the delayable message itself. Depending on what the delayable message
-is being used for this may not be possible and, if so, care must be taken to ensure that the delays
-used are aligned to the general responsiveness of the subscriber i.e. the delays used are longer
-than the worse case subscriber message handling time.
-
 If a delayable message is aborted there is a chance that it is already in the subscriber's message
 queue and will still be received by the subscriber after the abort. Similarly for updating the
 timeout, if the message has already timed out but has not been processed by the subscriber then
-it may look like the message has timed out immediately as the subscriber will receive the message
-twice. Additionally updating or aborting a delayable message from a thread that is not the
-subscriber's thread has further edge cases as the subscriber may be processing the delayable message
-when the message is being updated/aborted from the other thread. Adding a cancelled/updated flag to
-the message and wrapping message accesses with a mutex in the multi-threaded case may be sufficient
-to mitigate these edge cases depending on the application's use case.
+it may look like the message has timed out immediately. Additionally, updating or aborting a
+delayable message from a thread that is not the subscriber's thread has further edge cases as the
+subscriber may be processing the delayable message when the message is being updated/aborted from
+the other thread. Adding a cancelled/updated flag to the message and wrapping message accesses with
+a mutex in the multi-threaded case may be sufficient to mitigate these edge cases depending on the
+application's use case.
 
 ## Additional Notes
 
@@ -233,12 +224,7 @@ processing overhead for messages that are only received by a single subscriber.
 
 * Sample app
 * HSM documentation
-* Re-write delayable message so that it doesn't rely on z_*_timeout and to improve timeout behavior
 * Better initialization mechanics for HSMs and subscribers
 * Heap message allocator
 * Ability to run the broker publish handling on a thread or a different work queue
-* Different subscriber types other than bitmask, could be a callback
-* Different publish queuing mechanism other than FIFO, could be msgq or direct
 * Linker section subscribers + macros for static init of run time subscribers
-* Configurable msgq subscriber behavior: drop message when msgq full based on (msg_id > DROP_LEVEL),
-  a per subscriber setting

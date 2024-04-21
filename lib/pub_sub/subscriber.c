@@ -107,7 +107,7 @@ int pub_sub_handle_queued_msg(struct pub_sub_subscriber *subscriber, k_timeout_t
 	return ret;
 }
 
-void pub_sub_publish_to_subscriber(struct pub_sub_subscriber *subscriber, void *msg)
+void pub_sub_publish_to_subscriber(struct pub_sub_subscriber *subscriber, const void *msg)
 {
 	__ASSERT(subscriber != NULL, "");
 	__ASSERT(pub_sub_msg_get_msg_id(msg) > subscriber->max_pub_msg_id,
