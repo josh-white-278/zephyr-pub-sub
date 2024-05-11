@@ -20,27 +20,31 @@ BUILD_ASSERT(sizeof(atomic_t) >= 4);
 		    FIELD_PREP(PUB_SUB_MSG_ALLOC_MASK, alloc_id) |                                 \
 		    FIELD_PREP(PUB_SUB_MSG_REF_CNT_MASK, 0))
 
-#define PUB_SUB_MSG_OVERHEAD_NUM_BYTES (sizeof(struct pub_sub_msg))
+#define PUB_SUB_MSG_OVERHEAD_NUM_BYTES (sizeof(struct pub_sub_msg_header))
 
-struct pub_sub_msg {
+struct pub_sub_msg_header {
 	void *fifo_reserved;
 	// To save space atomic data contains the msg id, allocator id and reference counter e.g.
 	// uint16_t msg_id
 	// uint8_t allocator_id
 	// uint8_t ref_cnt
 	atomic_t atomic_data;
+};
+
+struct pub_sub_msg {
+	struct pub_sub_msg_header header;
 	uint8_t __aligned(sizeof(void *)) msg[];
 };
 
 /**
  * @brief Initialize a publish subscribe message
  *
- * Initializes the message's reference counter to 1 and sets its message id and allocator id to the
+ * Initializes the message's reference counter to 0 and sets its message id and allocator id to the
  * passed in values.
  *
  * @warning
  * Must only be called with messages that conform to the publish subscribe message memory layout
- * i.e. the message is preceded by the pub_sub_msg struct.
+ * i.e. the message is preceded by the pub_sub_msg_header struct.
  *
  * @param msg Address of the message to initialize
  * @param msg_id The message id to initialize the message with
@@ -50,7 +54,7 @@ static inline void pub_sub_msg_init(void *msg, uint16_t msg_id, uint8_t alloc_id
 {
 	__ASSERT(msg != NULL, "");
 	struct pub_sub_msg *ps_msg = CONTAINER_OF(msg, struct pub_sub_msg, msg);
-	ps_msg->atomic_data = PUB_SUB_MSG_ATOMIC_DATA_INIT(msg_id, alloc_id);
+	ps_msg->header.atomic_data = PUB_SUB_MSG_ATOMIC_DATA_INIT(msg_id, alloc_id);
 }
 
 /**
@@ -58,7 +62,7 @@ static inline void pub_sub_msg_init(void *msg, uint16_t msg_id, uint8_t alloc_id
  *
  * @warning
  * Must only be called with messages that conform to the publish subscribe message memory layout
- * i.e. the message is preceded by the pub_sub_msg struct.
+ * i.e. the message is preceded by the pub_sub_msg_header struct.
  *
  * @param msg Address of the message
  *
@@ -68,7 +72,7 @@ static inline uint8_t pub_sub_msg_get_ref_cnt(const void *msg)
 {
 	__ASSERT(msg != NULL, "");
 	struct pub_sub_msg *ps_msg = CONTAINER_OF(msg, struct pub_sub_msg, msg);
-	return FIELD_GET(PUB_SUB_MSG_REF_CNT_MASK, atomic_get(&ps_msg->atomic_data));
+	return FIELD_GET(PUB_SUB_MSG_REF_CNT_MASK, atomic_get(&ps_msg->header.atomic_data));
 }
 
 /**
@@ -76,7 +80,7 @@ static inline uint8_t pub_sub_msg_get_ref_cnt(const void *msg)
  *
  * @warning
  * Must only be called with messages that conform to the publish subscribe message memory layout
- * i.e. the message is preceded by the pub_sub_msg struct.
+ * i.e. the message is preceded by the pub_sub_msg_header struct.
  *
  * @warning
  * The reference counter is only an 8 bit value so must be less than 255 prior to calling this
@@ -89,7 +93,7 @@ static inline void pub_sub_msg_inc_ref_cnt(const void *msg)
 	__ASSERT(msg != NULL, "");
 	__ASSERT(pub_sub_msg_get_ref_cnt(msg) < UINT8_MAX, "ref count overflow");
 	struct pub_sub_msg *ps_msg = CONTAINER_OF(msg, struct pub_sub_msg, msg);
-	atomic_inc(&ps_msg->atomic_data);
+	atomic_inc(&ps_msg->header.atomic_data);
 }
 
 /**
@@ -97,7 +101,7 @@ static inline void pub_sub_msg_inc_ref_cnt(const void *msg)
  *
  * @warning
  * Must only be called with messages that conform to the publish subscribe message memory layout
- * i.e. the message is preceded by the pub_sub_msg struct.
+ * i.e. the message is preceded by the pub_sub_msg_header struct.
  *
  * @param msg Address of the message
  *
@@ -108,7 +112,7 @@ static inline uint8_t pub_sub_msg_dec_ref_cnt(const void *msg)
 	__ASSERT(msg != NULL, "");
 	__ASSERT(pub_sub_msg_get_ref_cnt(msg) > 0, "ref count underflow");
 	struct pub_sub_msg *ps_msg = CONTAINER_OF(msg, struct pub_sub_msg, msg);
-	return FIELD_GET(PUB_SUB_MSG_REF_CNT_MASK, atomic_dec(&ps_msg->atomic_data));
+	return FIELD_GET(PUB_SUB_MSG_REF_CNT_MASK, atomic_dec(&ps_msg->header.atomic_data));
 }
 
 /**
@@ -116,7 +120,7 @@ static inline uint8_t pub_sub_msg_dec_ref_cnt(const void *msg)
  *
  * @warning
  * Must only be called with messages that conform to the publish subscribe message memory layout
- * i.e. the message is preceded by the pub_sub_msg struct.
+ * i.e. the message is preceded by the pub_sub_msg_header struct.
  *
  * @param msg Address of the message
  *
@@ -126,7 +130,7 @@ static inline uint16_t pub_sub_msg_get_msg_id(const void *msg)
 {
 	__ASSERT(msg != NULL, "");
 	struct pub_sub_msg *ps_msg = CONTAINER_OF(msg, struct pub_sub_msg, msg);
-	return FIELD_GET(PUB_SUB_MSG_ID_MASK, atomic_get(&ps_msg->atomic_data));
+	return FIELD_GET(PUB_SUB_MSG_ID_MASK, atomic_get(&ps_msg->header.atomic_data));
 }
 
 /**
@@ -134,7 +138,7 @@ static inline uint16_t pub_sub_msg_get_msg_id(const void *msg)
  *
  * @warning
  * Must only be called with messages that conform to the publish subscribe message memory layout
- * i.e. the message is preceded by the pub_sub_msg struct.
+ * i.e. the message is preceded by the pub_sub_msg_header struct.
  *
  * @param msg Address of the message
  *
@@ -144,7 +148,7 @@ static inline uint8_t pub_sub_msg_get_alloc_id(const void *msg)
 {
 	__ASSERT(msg != NULL, "");
 	struct pub_sub_msg *ps_msg = CONTAINER_OF(msg, struct pub_sub_msg, msg);
-	return FIELD_GET(PUB_SUB_MSG_ALLOC_MASK, atomic_get(&ps_msg->atomic_data));
+	return FIELD_GET(PUB_SUB_MSG_ALLOC_MASK, atomic_get(&ps_msg->header.atomic_data));
 }
 
 /**
@@ -152,7 +156,7 @@ static inline uint8_t pub_sub_msg_get_alloc_id(const void *msg)
  *
  * @warning
  * Must only be called with messages that conform to the publish subscribe message memory layout
- * i.e. the message is preceded by the pub_sub_msg struct..
+ * i.e. the message is preceded by the pub_sub_msg_header struct.
  *
  * @param fifo Address of the fifo
  * @param msg Address of the message
@@ -170,7 +174,7 @@ static inline void pub_sub_msg_fifo_put(struct k_fifo *fifo, const void *msg)
  *
  * @warning
  * Must only be called with messages that conform to the publish subscribe message memory layout
- * i.e. the message is preceded by the pub_sub_msg struct.
+ * i.e. the message is preceded by the pub_sub_msg_header struct.
  *
  * @param fifo Address of the fifo
  * @param timeout How long to wait for a message to become free
@@ -187,4 +191,4 @@ static inline void *pub_sub_msg_fifo_get(struct k_fifo *fifo, k_timeout_t timeou
 }
 #endif
 
-#endif /* PUB_SUB_MSG_ALLOC_H_ */
+#endif /* PUB_SUB_MSG_H_ */
