@@ -178,10 +178,7 @@ ZTEST(delayable_msg, test_is_active)
 	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
 	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
 	zassert_ok(ret);
-	// Message should still be in the expired queue so should still be active
-	zassert_true(pub_sub_delayable_msg_is_active(g_sub_0_msg_0));
-	k_sleep(K_MSEC(5));
-	// Message should now be queued with the subscriber is is no longer active
+	// Message should now be queued with the subscriber so is no longer active
 	zassert_false(pub_sub_delayable_msg_is_active(g_sub_0_msg_0));
 	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
 	zassert_ok(ret);
@@ -283,7 +280,7 @@ ZTEST(delayable_msg, test_expired_queue)
 	// All of the expired messages can be received by subscriber 1
 	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_0;
 	g_sub_1_expected_msg.msg = g_sub_1_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_MSEC(5));
+	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
 	zassert_ok(ret);
 
 	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_1;
@@ -295,8 +292,7 @@ ZTEST(delayable_msg, test_expired_queue)
 	g_sub_1_expected_msg.msg = g_sub_1_msg_2;
 	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
 	zassert_ok(ret);
-	// Expired messages are re-checked every 5 ms
-	zassert_equal(k_uptime_get() - start_ms, 5);
+	zassert_equal(k_uptime_get() - start_ms, 0);
 }
 
 ZTEST(delayable_msg, test_expired_interleaved)
@@ -450,7 +446,8 @@ ZTEST(delayable_msg, test_abort_msg)
 
 	// Let it almost expire and then abort it
 	k_sleep(K_MSEC(80));
-	zassert_ok(pub_sub_delayable_msg_abort(g_sub_0_msg_0));
+	pub_sub_delayable_msg_abort(g_sub_0_msg_0);
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should not be received
 	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(100));
@@ -464,7 +461,8 @@ ZTEST(delayable_msg, test_abort_msg)
 
 	// Let the first message almost expire and then abort it
 	k_sleep(K_MSEC(80));
-	zassert_ok(pub_sub_delayable_msg_abort(g_sub_0_msg_0));
+	pub_sub_delayable_msg_abort(g_sub_0_msg_0);
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The second message should be received at the correct time
 	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_1;
@@ -482,7 +480,8 @@ ZTEST(delayable_msg, test_abort_msg)
 
 	// Let the first message almost expire and then abort the second one
 	k_sleep(K_MSEC(80));
-	zassert_ok(pub_sub_delayable_msg_abort(g_sub_0_msg_1));
+	pub_sub_delayable_msg_abort(g_sub_0_msg_1);
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_1));
 
 	// The first message should be received at the correct time
 	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
@@ -517,7 +516,8 @@ ZTEST(delayable_msg, test_abort_msg_with_expired)
 
 	// Let it almost expire and then abort it
 	k_sleep(K_MSEC(80));
-	zassert_ok(pub_sub_delayable_msg_abort(g_sub_0_msg_0));
+	pub_sub_delayable_msg_abort(g_sub_0_msg_0);
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should not be received
 	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(100));
@@ -531,7 +531,8 @@ ZTEST(delayable_msg, test_abort_msg_with_expired)
 
 	// Let the first message almost expire and then abort it
 	k_sleep(K_MSEC(80));
-	zassert_ok(pub_sub_delayable_msg_abort(g_sub_0_msg_0));
+	pub_sub_delayable_msg_abort(g_sub_0_msg_0);
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The second message should be received at the correct time
 	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_1;
@@ -549,7 +550,8 @@ ZTEST(delayable_msg, test_abort_msg_with_expired)
 
 	// Let the first message almost expire and then abort the second one
 	k_sleep(K_MSEC(80));
-	zassert_ok(pub_sub_delayable_msg_abort(g_sub_0_msg_1));
+	pub_sub_delayable_msg_abort(g_sub_0_msg_1);
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_1));
 
 	// The first message should be received at the correct time
 	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
@@ -583,14 +585,17 @@ ZTEST(delayable_msg, test_abort_queued_msg)
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(100));
 
-	// Aborting the message should return an error
-	zassert_not_ok(pub_sub_delayable_msg_abort(g_sub_0_msg_0));
+	// Aborting the message should set was aborted to true
+	pub_sub_delayable_msg_abort(g_sub_0_msg_0);
+	zassert_true(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should be received
 	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
 	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
 	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
 	zassert_ok(ret);
+	// Was aborted should return false after the aborted message has been handled
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// Start a message and let it expire twice
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
@@ -598,14 +603,17 @@ ZTEST(delayable_msg, test_abort_queued_msg)
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(100));
 
-	// Aborting the message should return an error
-	zassert_not_ok(pub_sub_delayable_msg_abort(g_sub_0_msg_0));
+	// Aborting the message should set was aborted to true
+	pub_sub_delayable_msg_abort(g_sub_0_msg_0);
+	zassert_true(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should be received once
 	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
 	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
 	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
 	zassert_ok(ret);
+	// Was aborted should return false after the aborted message has been handled
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(200));
 	zassert_not_ok(ret);
 }
@@ -621,7 +629,8 @@ ZTEST(delayable_msg, test_update_single_msg)
 	k_sleep(K_MSEC(50));
 
 	// Update the timeout to be later
-	zassert_ok(pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(200)));
+	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(200));
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 	start_ms = k_uptime_get();
 
 	// The message should be received at the correct time
@@ -636,7 +645,8 @@ ZTEST(delayable_msg, test_update_single_msg)
 	k_sleep(K_MSEC(50));
 
 	// Update the timeout to be earlier
-	zassert_ok(pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100)));
+	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 	start_ms = k_uptime_get();
 
 	// The message should be received at the correct time
@@ -658,9 +668,12 @@ ZTEST(delayable_msg, test_update_multi_msg)
 	k_sleep(K_MSEC(50));
 
 	// Update the message timeouts
-	zassert_ok(pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(250)));
-	zassert_ok(pub_sub_delayable_msg_start(g_sub_0_msg_1, K_MSEC(150)));
-	zassert_ok(pub_sub_delayable_msg_start(g_sub_0_msg_2, K_MSEC(50)));
+	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(250));
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
+	pub_sub_delayable_msg_start(g_sub_0_msg_1, K_MSEC(150));
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_1));
+	pub_sub_delayable_msg_start(g_sub_0_msg_2, K_MSEC(50));
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_2));
 	start_ms = k_uptime_get();
 
 	// The messages should be received at the correct time
@@ -700,7 +713,8 @@ ZTEST(delayable_msg, test_update_single_msg_with_expired)
 	k_sleep(K_MSEC(50));
 
 	// Update the timeout to be later
-	zassert_ok(pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(200)));
+	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(200));
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 	start_ms = k_uptime_get();
 
 	// The message should be received at the correct time
@@ -715,7 +729,8 @@ ZTEST(delayable_msg, test_update_single_msg_with_expired)
 	k_sleep(K_MSEC(50));
 
 	// Update the timeout to be earlier
-	zassert_ok(pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100)));
+	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 	start_ms = k_uptime_get();
 
 	// The message should be received at the correct time
@@ -743,9 +758,12 @@ ZTEST(delayable_msg, test_update_multi_msg_with_expired)
 	k_sleep(K_MSEC(50));
 
 	// Update the message timeouts
-	zassert_ok(pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(250)));
-	zassert_ok(pub_sub_delayable_msg_start(g_sub_0_msg_1, K_MSEC(150)));
-	zassert_ok(pub_sub_delayable_msg_start(g_sub_0_msg_2, K_MSEC(50)));
+	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(250));
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
+	pub_sub_delayable_msg_start(g_sub_0_msg_1, K_MSEC(150));
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_1));
+	pub_sub_delayable_msg_start(g_sub_0_msg_2, K_MSEC(50));
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_2));
 	start_ms = k_uptime_get();
 
 	// The messages should be received at the correct time
@@ -778,8 +796,9 @@ ZTEST(delayable_msg, test_update_queued_msg)
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(100));
 
-	// Update timeout without handling the message, should return error
-	zassert_not_ok(pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(200)));
+	// Updating timeout without handling the message should set was aborted to true
+	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(200));
+	zassert_true(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 	start_ms = k_uptime_get();
 
 	// The queued message should be received immediately
@@ -787,6 +806,8 @@ ZTEST(delayable_msg, test_update_queued_msg)
 	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
 	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
 	zassert_ok(ret);
+	// Was aborted should return false after the restarted message has been handled
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should also be received after the updated timeout
 	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
@@ -799,8 +820,9 @@ ZTEST(delayable_msg, test_update_queued_msg)
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(100));
 
-	// Update timeout without handling the message, should return error
-	zassert_not_ok(pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(200)));
+	// Updating timeout without handling the message should set was aborted to true
+	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(200));
+	zassert_true(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 	start_ms = k_uptime_get();
 
 	// The queued message should be received immediately
@@ -808,6 +830,8 @@ ZTEST(delayable_msg, test_update_queued_msg)
 	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
 	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
 	zassert_ok(ret);
+	// Was aborted should return false after the restarted message has been handled
+	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should also be received after the updated timeout
 	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));

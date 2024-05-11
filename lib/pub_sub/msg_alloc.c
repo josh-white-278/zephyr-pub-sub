@@ -3,6 +3,7 @@
  */
 #include <pub_sub/msg_alloc.h>
 #include <pub_sub/static_msg.h>
+#include <pub_sub/delayable_msg.h>
 
 #ifdef CONFIG_PUB_SUB_RUNTIME_ALLOCATORS
 struct pub_sub_runtime_allocators {
@@ -36,7 +37,8 @@ void pub_sub_release_msg(const void *msg)
 				g_runtime_allocators.allocators[runtime_id];
 			allocator->free(allocator->impl, msg);
 #endif // CONFIG_PUB_SUB_RUNTIME_ALLOCATORS
-
+		} else if (allocator_id == PUB_SUB_ALLOC_ID_DELAYABLE_MSG) {
+			pub_sub_free_delayable_msg(msg);
 		} else if (allocator_id == PUB_SUB_ALLOC_ID_CALLBACK_MSG) {
 			pub_sub_free_callback_msg(msg);
 		}

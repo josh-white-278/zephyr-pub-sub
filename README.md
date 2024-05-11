@@ -191,21 +191,41 @@ within the callback.
 ### Delayable messages
 
 A delayable message is a static message that is scheduled to be published in the future. A delayable
-message is only published directly to a subscriber and so must have a private message id. The amount
-of time delayed is at least as much time as specified but could be greater depending on how fast a
-subscriber is processing its messages, the configured tick granularity etc. If high precision timing
-with low jitter is required by an application a delayable message will probably not be the tool for
-the job.
+message is published directly to a subscriber and so must have a private message id. The amount of
+time delayed is at least as much time as specified but could be greater depending on how fast the
+subscriber is processing its messages, the configured tick granularity etc.
 
 If a delayable message is aborted there is a chance that it is already in the subscriber's message
 queue and will still be received by the subscriber after the abort. Similarly for updating the
 timeout, if the message has already timed out but has not been processed by the subscriber then
-it may look like the message has timed out immediately. Additionally, updating or aborting a
-delayable message from a thread that is not the subscriber's thread has further edge cases as the
-subscriber may be processing the delayable message when the message is being updated/aborted from
-the other thread. Adding a cancelled/updated flag to the message and wrapping message accesses with
-a mutex in the multi-threaded case may be sufficient to mitigate these edge cases depending on the
-application's use case.
+it will be received twice. The first for the already queued timeout and then second after the
+updated timeout expires. To handle both of these cases delayable messages have an internal flag to
+track whether they have been aborted or not and the subscriber can check the aborted state of the
+message when it is handled. The aborted flag is automatically cleared after the message has been
+handled.
+
+One caveat with the aborted flag is that it will get set if the message is started from the
+subscriber's message handler when it is handling the message. This is because the message's
+reference counter is used to determine if the message is queued or not. The message is not released
+by the framework until after the message handler returns so the reference counter is always non-zero
+while the message is being handled. Therefore if a delayable message's aborted flag is checked it
+should always be checked first to ensure its state is correct. E.g.:
+
+``` C
+static void msg_handler(uint16_t msg_id, const void *msg, void *user_data)
+{
+   switch (msg_id) {
+   case MSG_ID_DELAYABLE_MSG: {
+      if (!pub_sub_delayable_msg_was_aborted(msg)) {
+         pub_sub_delayable_msg_start(msg, K_MSEC(500));
+         // pub_sub_delayable_msg_was_aborted(msg) will now return true until the msg_handler
+         // returns and the message is freed.
+      }
+      break;
+   }
+   }
+};
+```
 
 ## Additional Notes
 

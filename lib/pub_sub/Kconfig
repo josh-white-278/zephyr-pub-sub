@@ -18,8 +18,4 @@ config PUB_SUB_RUNTIME_ALLOCATORS_MAX_NUM
 	default 5
 	depends on PUB_SUB_RUNTIME_ALLOCATORS
 
-config PUB_SUB_EXPIRED_DELAYABLE_MSG_RETRY_TIME_MS
-	int "How often to retry publishing expired delayable messages in milliseconds"
-	default 5
-
 endif

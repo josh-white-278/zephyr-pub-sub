@@ -15,6 +15,7 @@ struct pub_sub_msg_delayable_header {
 	k_timepoint_t end_time;
 	sys_dnode_t node;
 	struct pub_sub_subscriber *subscriber;
+	bool aborted;
 	struct pub_sub_msg_header pub_sub_msg_header;
 };
 
@@ -44,10 +45,11 @@ struct pub_sub_msg_delayable {
 			{                                                                          \
 				.node = {},                                                        \
 				.subscriber = _subscriber,                                         \
+				.aborted = false,                                                  \
 				.pub_sub_msg_header =                                              \
 					{                                                          \
 						.atomic_data = PUB_SUB_MSG_ATOMIC_DATA_INIT(       \
-							msg_id, PUB_SUB_ALLOC_ID_STATIC_MSG),      \
+							msg_id, PUB_SUB_ALLOC_ID_DELAYABLE_MSG),   \
 					},                                                         \
 			},                                                                         \
 	};                                                                                         \
@@ -72,31 +74,23 @@ void pub_sub_delayable_msg_init(void *msg, struct pub_sub_subscriber *subscriber
  * Starting a delayable message that is already running is allowed, it is the same as aborting the
  * message and then starting it again.
  *
- * @note This function will return -EBUSY when starting the delayable message from the
- * subscriber's message handler function when handling the delayable message itself. This is
- * because the -EBUSY return value is based on the message's reference counter being greater
- * than 0 which it always is when the subscriber is handling the message. In this case the
- * return value of this function can be ignored and the double reception warning below does
- * not apply.
- *
  * @warning
  * Must only be called with messages that conform to the delayable message memory layout
  * i.e. the message is preceded by the pub_sub_msg_delayable_header struct. Additionally the
  * delayable message must be initialized before being started.
  *
  * @warning
- * Starting a delayable message will not remove it from the subscriber's message queue/fifo
- * if it has already timed out. If this function does not return 0 the subscriber will
- * receive the delayable message twice, the first for the old timeout and the second for the
- * just started timeout.
+ * Restarting a delayable message will not remove it from the subscriber's message queue/fifo
+ * if it has already timed out. If the message is already queued with the subscriber then this
+ * function will set the message's internal aborted state to true which can be checked with the
+ * function pub_sub_delayable_msg_was_aborted when the message is handled.
+ * pub_sub_delayable_msg_was_aborted will return true until the the message is handled by the
+ * subscriber after which the internal aborted state will be automatically cleared.
  *
  * @param msg Address of the message to start
  * @param timeout The time to wait before publishing the message
- *
- * @retval 0 if successfully updated
- * @retval -EBUSY if the message has already timed out but has not been handled yet
  */
-int pub_sub_delayable_msg_start(const void *msg, k_timeout_t timeout);
+void pub_sub_delayable_msg_start(const void *msg, k_timeout_t timeout);
 
 /**
  * @brief Abort the publishing of a delayable publish subscribe message
@@ -107,15 +101,15 @@ int pub_sub_delayable_msg_start(const void *msg, k_timeout_t timeout);
  *
  * @warning
  * Aborting a delayable message will not remove it from the subscriber's message queue/fifo
- * if it has already timed out. If this function does not return 0 the subscriber will
- * receive the delayable message some time in the future.
+ * if it has already timed out. If the message is already queued with the subscriber then this
+ * function will set the message's internal aborted state to true which can be checked with the
+ * function pub_sub_delayable_msg_was_aborted when the message is handled.
+ * pub_sub_delayable_msg_was_aborted will return true until the the message is handled by the
+ * subscriber after which the internal aborted state will be automatically cleared.
  *
  * @param msg Address of the message to abort
- *
- * @retval 0 if successfully aborted
- * @retval -EBUSY if the message has already timed out but has not been handled yet
  */
-int pub_sub_delayable_msg_abort(const void *msg);
+void pub_sub_delayable_msg_abort(const void *msg);
 
 /**
  * @brief Check if a delayable message has an active timeout
@@ -128,7 +122,35 @@ int pub_sub_delayable_msg_abort(const void *msg);
  *
  * @return true if the message has an active timeout, false if it does not
  */
-bool pub_sub_delayable_msg_is_active(const void *msg);
+static inline bool pub_sub_delayable_msg_is_active(const void *msg)
+{
+	__ASSERT(msg != NULL, "");
+	const struct pub_sub_msg_delayable *delayable_msg =
+		CONTAINER_OF(msg, struct pub_sub_msg_delayable, msg);
+	return sys_dnode_is_linked(&delayable_msg->header.node);
+}
+
+/**
+ * @brief Check if a delayable message was aborted while queued with the subscriber
+ *
+ * @warning
+ * Must only be called with messages that conform to the delayable message memory layout
+ * i.e. the message is preceded by the pub_sub_msg_delayable_header struct.
+ *
+ * @param msg Address of the message to check
+ *
+ * @return true if the message was aborted, false otherwise
+ */
+static inline bool pub_sub_delayable_msg_was_aborted(const void *msg)
+{
+	__ASSERT(msg != NULL, "");
+	const struct pub_sub_msg_delayable *delayable_msg =
+		CONTAINER_OF(msg, struct pub_sub_msg_delayable, msg);
+	return delayable_msg->header.aborted;
+}
+
+// Internal use
+void pub_sub_free_delayable_msg(const void *msg);
 
 #ifdef __cplusplus
 }
