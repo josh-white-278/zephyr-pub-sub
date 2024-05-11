@@ -19,17 +19,6 @@ void pub_sub_init_callback_subscriber(struct pub_sub_subscriber *subscriber,
 	subscriber->rx_type = PUB_SUB_RX_TYPE_CALLBACK;
 }
 
-void pub_sub_init_msgq_subscriber(struct pub_sub_subscriber *subscriber, atomic_t *subs_bitarray,
-				  uint16_t max_pub_msg_id, struct k_msgq *msgq)
-{
-	__ASSERT(subscriber != NULL, "");
-	__ASSERT(msgq != NULL, "");
-	__ASSERT(subs_bitarray != NULL, "");
-	common_subscriber_init(subscriber, subs_bitarray, max_pub_msg_id);
-	subscriber->msgq = msgq;
-	subscriber->rx_type = PUB_SUB_RX_TYPE_MSGQ;
-}
-
 void pub_sub_init_fifo_subscriber(struct pub_sub_subscriber *subscriber, atomic_t *subs_bitarray,
 				  uint16_t max_pub_msg_id)
 {
@@ -50,11 +39,6 @@ int pub_sub_populate_poll_evt(struct pub_sub_subscriber *subscriber, struct k_po
 		ret = -EPERM;
 		break;
 	}
-	case PUB_SUB_RX_TYPE_MSGQ: {
-		k_poll_event_init(poll_evt, K_POLL_TYPE_MSGQ_DATA_AVAILABLE,
-				  K_POLL_MODE_NOTIFY_ONLY, subscriber->msgq);
-		break;
-	}
 	case PUB_SUB_RX_TYPE_FIFO: {
 		k_poll_event_init(poll_evt, K_POLL_TYPE_FIFO_DATA_AVAILABLE,
 				  K_POLL_MODE_NOTIFY_ONLY, &subscriber->fifo);
@@ -72,18 +56,6 @@ int pub_sub_handle_queued_msg(struct pub_sub_subscriber *subscriber, k_timeout_t
 	switch (subscriber->rx_type) {
 	case PUB_SUB_RX_TYPE_CALLBACK: {
 		ret = -EPERM;
-		break;
-	}
-	case PUB_SUB_RX_TYPE_MSGQ: {
-		void *msg;
-		ret = k_msgq_get(subscriber->msgq, &msg, timeout);
-		if (ret == 0) {
-			uint16_t msg_id = pub_sub_msg_get_msg_id(msg);
-			__ASSERT(subscriber->handler_data.msg_handler != NULL, "");
-			subscriber->handler_data.msg_handler(msg_id, msg,
-							     subscriber->handler_data.user_data);
-			pub_sub_release_msg(msg);
-		}
 		break;
 	}
 	case PUB_SUB_RX_TYPE_FIFO: {
@@ -117,10 +89,6 @@ void pub_sub_publish_to_subscriber(struct pub_sub_subscriber *subscriber, const 
 		pub_sub_msg_fifo_put(&subscriber->fifo, msg);
 		__ASSERT(subscriber->broker != NULL, "");
 		k_sem_give(&subscriber->broker->callback_sem);
-		break;
-	}
-	case PUB_SUB_RX_TYPE_MSGQ: {
-		k_msgq_put(subscriber->msgq, &msg, K_FOREVER);
 		break;
 	}
 	case PUB_SUB_RX_TYPE_FIFO: {

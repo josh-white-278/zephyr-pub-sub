@@ -21,13 +21,6 @@ struct callback_subscriber {
 	struct pub_sub_subscriber subscriber;
 };
 
-struct msgq_subscriber {
-	struct k_msgq msgq;
-	void *msgq_buffer;
-	atomic_t *subs_bitarray;
-	struct pub_sub_subscriber subscriber;
-};
-
 struct fifo_subscriber {
 	atomic_t *subs_bitarray;
 	struct pub_sub_subscriber subscriber;
@@ -39,9 +32,6 @@ void free_mem_slab_allocator(struct pub_sub_allocator *allocator);
 
 struct callback_subscriber *malloc_callback_subscriber(uint16_t max_msg_id);
 void free_callback_subscriber(struct callback_subscriber *c_subscriber);
-
-struct msgq_subscriber *malloc_msgq_subscriber(uint16_t max_msg_id, size_t msgq_len);
-void free_msgq_subscriber(struct msgq_subscriber *m_subscriber);
 
 struct fifo_subscriber *malloc_fifo_subscriber(uint16_t max_msg_id);
 void free_fifo_subscriber(struct fifo_subscriber *f_subscriber);

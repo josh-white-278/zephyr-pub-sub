@@ -13,7 +13,6 @@ typedef void (*pub_sub_handler_fn)(uint16_t msg_id, const void *msg, void *user_
 
 enum pub_sub_rx_type {
 	PUB_SUB_RX_TYPE_CALLBACK,
-	PUB_SUB_RX_TYPE_MSGQ,
 	PUB_SUB_RX_TYPE_FIFO,
 };
 
@@ -26,15 +25,12 @@ struct pub_sub_subscriber {
 	struct pub_sub_broker *broker;
 	sys_snode_t sub_list_node;
 	struct pub_sub_subscriber_handler_data handler_data;
-	union {
-		struct k_msgq *msgq;
-		struct k_fifo fifo;
-	};
+	struct k_fifo fifo;
 	atomic_t *subs_bitarray;
 	enum pub_sub_rx_type rx_type;
 	uint16_t max_pub_msg_id;
 	// Priority is relative to other subscribers of the same type i.e. a low priority callback
-	// will always be higher priority than a high priority msgq.
+	// will always be higher priority than a high priority fifo.
 	// 0 is highest priority, 255 is lowest priority
 	uint8_t priority;
 };
@@ -50,18 +46,6 @@ struct pub_sub_subscriber {
  */
 #define PUB_SUB_SUBS_BITARRAY_DEFINE(name, max_msg_id) ATOMIC_DEFINE(name, max_msg_id + 1)
 
-#define PUB_SUB_RX_MSGQ_MSG_SIZE             (sizeof(void *))
-#define PUB_SUB_RX_MSGQ_BUFFER_LEN(max_msgs) (max_msgs * PUB_SUB_RX_MSGQ_MSG_SIZE)
-
-/**
- * @brief Statically define and initialize a message queue for a subscriber
- *
- * @param name The name of the created message queue
- * @param max_msgs The maximum number of messages that can be queued
- */
-#define PUB_SUB_RX_MSGQ_DEFINE(name, max_msgs)                                                     \
-	K_MSGQ_DEFINE(name, PUB_SUB_RX_MSGQ_MSG_SIZE, max_msgs, sizeof(void *));
-
 /**
  * @brief Initialize a callback type subscriber
  *
@@ -75,23 +59,6 @@ struct pub_sub_subscriber {
  */
 void pub_sub_init_callback_subscriber(struct pub_sub_subscriber *subscriber,
 				      atomic_t *subs_bitarray, uint16_t max_pub_msg_id);
-
-/**
- * @brief Initialize a message queue type subscriber
- *
- * A subscriber must be initialized before it is used. The subscriptions bit array must be sized
- * correctly for the maximum message id that will be subscribed to. The PUB_SUB_SUBS_BITARRAY_*
- * macros can be used to assist with creating a subscriptions bit array of the correct length. The
- * message queue must be initialized and sized correctly for the publish subscribe framework. The
- * PUB_SUB_RX_MSGQ_* macros can be used to assist with creating a message queue for this purpose.
- *
- * @param subscriber Address of the subscriber
- * @param subs_bitarray The subscriptions bit array to use to track subscriptions
- * @param max_pub_msg_id The maximum message id that will be subscribed to
- * @param msgq The message queue to use for queuing messages
- */
-void pub_sub_init_msgq_subscriber(struct pub_sub_subscriber *subscriber, atomic_t *subs_bitarray,
-				  uint16_t max_pub_msg_id, struct k_msgq *msgq);
 
 /**
  * @brief Initialize a FIFO type subscriber
@@ -128,7 +95,7 @@ static inline void pub_sub_subscribe(struct pub_sub_subscriber *subscriber, uint
  *
  * @warning
  * There is a chance that a subscriber could still receive a message after unsubscribing from it if
- * the message is already in the subscriber's message queue
+ * the message is already in the subscriber's fifo
  *
  * @param subscriber Address of the subscriber
  * @param msg_id The message id to unsubscribe from
@@ -172,7 +139,7 @@ static inline void pub_sub_subscriber_set_handler_data(struct pub_sub_subscriber
 /**
  * @brief Set a subscriber's relative priority value
  *
- * A subscriber's priority value is relative to subscribers of the same type e.g. callback, msgq and
+ * A subscriber's priority value is relative to subscribers of the same type e.g. callback and
  * fifo. 0 is the highest priority value and 255 is the lowest priority value.
  *
  * @warning
@@ -192,8 +159,8 @@ static inline void pub_sub_subscriber_set_priority(struct pub_sub_subscriber *su
 /**
  * @brief Handle a message for a subscriber
  *
- * Dequeues a message from the subscriber's internal message queue or fifo and then calls the
- * subscriber's message handler function with the dequeued message.
+ * Dequeues a message from the subscriber's internal fifo and then calls the subscriber's message
+ * handler function with the dequeued message.
  *
  * @param subscriber Address of the subscriber
  * @param timeout How long to wait for a message
@@ -207,7 +174,7 @@ int pub_sub_handle_queued_msg(struct pub_sub_subscriber *subscriber, k_timeout_t
 /**
  * @brief Populate a k_poll_event from a subscriber
  *
- * Allows a subscriber's internal message queue or fifo to be polled for new messages
+ * Allows a subscriber's internal fifo to be polled for new messages
  *
  * @param subscriber Address of the subscriber
  * @param poll_evt Address of poll event to populate

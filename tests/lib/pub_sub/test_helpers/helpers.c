@@ -56,26 +56,6 @@ void free_callback_subscriber(struct callback_subscriber *c_subscriber)
 	free(c_subscriber);
 }
 
-struct msgq_subscriber *malloc_msgq_subscriber(uint16_t max_msg_id, size_t msgq_len)
-{
-	struct msgq_subscriber *m_subscriber = malloc(sizeof(struct msgq_subscriber));
-	m_subscriber->msgq_buffer = malloc(PUB_SUB_RX_MSGQ_BUFFER_LEN(msgq_len));
-	m_subscriber->subs_bitarray = malloc(PUB_SUB_SUBS_BITARRAY_BYTE_LEN(max_msg_id));
-
-	k_msgq_init(&m_subscriber->msgq, (char *)m_subscriber->msgq_buffer,
-		    PUB_SUB_RX_MSGQ_MSG_SIZE, msgq_len);
-	pub_sub_init_msgq_subscriber(&m_subscriber->subscriber, m_subscriber->subs_bitarray,
-				     max_msg_id, &m_subscriber->msgq);
-	return m_subscriber;
-}
-
-void free_msgq_subscriber(struct msgq_subscriber *m_subscriber)
-{
-	free(m_subscriber->subs_bitarray);
-	free(m_subscriber->msgq_buffer);
-	free(m_subscriber);
-}
-
 struct fifo_subscriber *malloc_fifo_subscriber(uint16_t max_msg_id)
 {
 	struct fifo_subscriber *f_subscriber = malloc(sizeof(struct fifo_subscriber));
@@ -109,12 +89,6 @@ void teardown_pub_sub_broker(struct pub_sub_broker *broker)
 			struct callback_subscriber *c_subscriber =
 				CONTAINER_OF(subscriber, struct callback_subscriber, subscriber);
 			free_callback_subscriber(c_subscriber);
-			break;
-		}
-		case PUB_SUB_RX_TYPE_MSGQ: {
-			struct msgq_subscriber *m_subscriber =
-				CONTAINER_OF(subscriber, struct msgq_subscriber, subscriber);
-			free_msgq_subscriber(m_subscriber);
 			break;
 		}
 		case PUB_SUB_RX_TYPE_FIFO: {

@@ -80,12 +80,12 @@ void pub_sub_delayable_msg_init(void *msg, struct pub_sub_subscriber *subscriber
  * delayable message must be initialized before being started.
  *
  * @warning
- * Restarting a delayable message will not remove it from the subscriber's message queue/fifo
- * if it has already timed out. If the message is already queued with the subscriber then this
- * function will set the message's internal aborted state to true which can be checked with the
- * function pub_sub_delayable_msg_was_aborted when the message is handled.
- * pub_sub_delayable_msg_was_aborted will return true until the the message is handled by the
- * subscriber after which the internal aborted state will be automatically cleared.
+ * Restarting a delayable message will not remove it from the subscriber's fifo if it has already
+ * timed out. If the message is already queued with the subscriber then this function will set the
+ * message's internal aborted state to true which can be checked with the function
+ * pub_sub_delayable_msg_was_aborted when the message is handled. pub_sub_delayable_msg_was_aborted
+ * will return true until the the message is handled by the subscriber after which the internal
+ * aborted state will be automatically cleared.
  *
  * @param msg Address of the message to start
  * @param timeout The time to wait before publishing the message
@@ -100,12 +100,12 @@ void pub_sub_delayable_msg_start(const void *msg, k_timeout_t timeout);
  * i.e. the message is preceded by the pub_sub_msg_delayable_header struct.
  *
  * @warning
- * Aborting a delayable message will not remove it from the subscriber's message queue/fifo
- * if it has already timed out. If the message is already queued with the subscriber then this
- * function will set the message's internal aborted state to true which can be checked with the
- * function pub_sub_delayable_msg_was_aborted when the message is handled.
- * pub_sub_delayable_msg_was_aborted will return true until the the message is handled by the
- * subscriber after which the internal aborted state will be automatically cleared.
+ * Aborting a delayable message will not remove it from the subscriber's fifo if it has already
+ * timed out. If the message is already queued with the subscriber then this function will set the
+ * message's internal aborted state to true which can be checked with the function
+ * pub_sub_delayable_msg_was_aborted when the message is handled. pub_sub_delayable_msg_was_aborted
+ * will return true until the the message is handled by the subscriber after which the internal
+ * aborted state will be automatically cleared.
  *
  * @param msg Address of the message to abort
  */

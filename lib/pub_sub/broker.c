@@ -37,13 +37,13 @@ void pub_sub_add_subscriber_to_broker(struct pub_sub_broker *broker,
 	sys_snode_t *prev_node = NULL;
 	struct pub_sub_subscriber *current = NULL;
 	subscriber->broker = broker;
-	// Subscribers get sorted by type first: callbacks, msgq and then fifo.
+	// Subscribers get sorted by type first: callbacks and then fifo.
 	// Then they are sorted by priority value for each type
 	k_mutex_lock(&broker->sub_list_mutex, K_FOREVER);
 	// Search for the start of our rx_type
 	current = SYS_SLIST_PEEK_HEAD_CONTAINER(&broker->subscribers, current, sub_list_node);
 	while (current != NULL) {
-		if (current->rx_type == subscriber->rx_type) {
+		if (current->rx_type <= subscriber->rx_type) {
 			break;
 		}
 		prev_node = &current->sub_list_node;
@@ -148,11 +148,6 @@ static void process_msg(struct pub_sub_broker *broker, uint16_t msg_id, void *ms
 				__ASSERT(sub->handler_data.msg_handler != NULL, "");
 				sub->handler_data.msg_handler(msg_id, msg,
 							      sub->handler_data.user_data);
-				break;
-			}
-			case PUB_SUB_RX_TYPE_MSGQ: {
-				pub_sub_acquire_msg(msg);
-				k_msgq_put(sub->msgq, &msg, K_FOREVER);
 				break;
 			}
 			case PUB_SUB_RX_TYPE_FIFO: {

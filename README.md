@@ -78,19 +78,18 @@ A default broker is provided for convenience, it can be disabled with
 
 ## Subscribers
 
-There are three different types of subscriber:
+There are two different types of subscriber:
 
 * Callback
-* Message queue
 * FIFO
 
 Although each type receives its messages slightly different they all receive them through a handler
-function. In the case of the callback subscriber the handler is called directly by the broker. The
-message queue and FIFO subscribers need to call a polling function from their own threads. The
-polling function manages dequeuing messages, calling the handler function and releasing
-message references as required. In general a message handler function should not block but if care
-is taken as to the type of subscriber (FIFO), its priority and its subscriptions it might be
-possible to run blocking operations in some cases.
+function. In the case of the callback subscriber the handler is called directly by the broker
+whereas FIFO subscribers need to call a polling function from their own threads. The polling
+function manages dequeuing messages, calling the handler function and releasing message references
+as required. In general a message handler function should not block but if care is taken as to the
+type of subscriber (FIFO), its priority and its subscriptions it might be possible to run blocking
+operations in some cases.
 
 Each subscriber maintains a subscriptions bit-array which indicates which message identifiers the
 subscriber has subscribed to. This bit-array is provided to the subscriber at initialization time
@@ -116,14 +115,6 @@ The callback subscriber is the highest priority type and all callback subscriber
 message before any other type. The callback subscriber type has its message handler function called
 directly from the broker's message processing thread. This means that the handler function can not
 block as it will block all other subscribers from receiving messages.
-
-### Message queue subscriber details
-
-The message queue subscriber is the second highest priority type and all message queue subscribers
-will receive a message before any other type other than the higher priority callback type. The
-message queue subscriber has a fixed length message queue for receiving published messages. If the
-queue is not long enough or is not serviced fast enough then it will block the broker's message
-processing thread until space becomes available in the message queue.
 
 ### FIFO subscriber details
 
