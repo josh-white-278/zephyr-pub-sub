@@ -7,7 +7,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include <pub_sub/pub_sub.h>
 #include <stdint.h>
 
 // Reserve highest msg ids for HSM private messages
@@ -44,30 +43,30 @@ typedef enum hsm_ret (*hsm_state_fn)(struct hsm *hsm, uint16_t msg_id, const voi
 struct hsm {
 	hsm_state_fn current_state;
 	hsm_state_fn tmp_state;
-	struct pub_sub_subscriber subscriber;
 };
-
-/**
- * @brief Initialize an HSM
- *
- * Initializing an HSM sets its starting state function and sets its subscriber's message handler
- * to the HSM framework's message handler. The HSM's subscriber must be initialized independently
- * from and in addition to the initialization of the HSM.
- *
- * @param hsm Address of the HSM
- * @param initial_state The HSM's starting state
- */
-void hsm_init(struct hsm *hsm, hsm_state_fn initial_state);
 
 /**
  * @brief Start an HSM
  *
- * Starting an HSM sends entry messages to the initial state and its parent states.The HSM must be
- * initialized before it can be started.
+ * Starting an HSM sets the current state to the initial state and sends entry messages to the
+ * initial state and its parent states (parent states first, initial state last).
  *
  * @param hsm Address of the HSM
+ * @param initial_state The HSM's starting state
  */
-void hsm_start(struct hsm *hsm);
+void hsm_start(struct hsm *hsm, hsm_state_fn initial_state);
+
+/**
+ * @brief Run a message through an HSM
+ *
+ * Running an HSM calls the current state function with the message and executes any behavior
+ * specified by the return, e.g. state transitions etc.
+ *
+ * @param hsm Address of the HSM to run
+ * @param msg_id The id of the message
+ * @param msg A pointer to the message
+ */
+void hsm_run(struct hsm *hsm, uint16_t msg_id, const void *msg);
 
 #ifdef __cplusplus
 }

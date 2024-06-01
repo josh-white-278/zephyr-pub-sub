@@ -32,7 +32,7 @@ void pub_sub_add_subscriber_to_broker(struct pub_sub_broker *broker,
 {
 	__ASSERT(broker != NULL, "");
 	__ASSERT(subscriber != NULL, "");
-	__ASSERT(subscriber->handler_data.msg_handler != NULL, "");
+	__ASSERT(subscriber->msg_handler != NULL, "");
 	__ASSERT(subscriber->broker == NULL, "");
 	sys_snode_t *prev_node = NULL;
 	struct pub_sub_subscriber *current = NULL;
@@ -43,7 +43,7 @@ void pub_sub_add_subscriber_to_broker(struct pub_sub_broker *broker,
 	// Search for the start of our rx_type
 	current = SYS_SLIST_PEEK_HEAD_CONTAINER(&broker->subscribers, current, sub_list_node);
 	while (current != NULL) {
-		if (current->rx_type <= subscriber->rx_type) {
+		if (subscriber->rx_type <= current->rx_type) {
 			break;
 		}
 		prev_node = &current->sub_list_node;
@@ -101,7 +101,7 @@ static void callback_direct_publish_handler(struct pub_sub_broker *broker)
 	k_mutex_lock(&broker->sub_list_mutex, K_FOREVER);
 	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&broker->subscribers, sub, tmp, sub_list_node) {
 		if (sub->rx_type == PUB_SUB_RX_TYPE_CALLBACK) {
-			__ASSERT(sub->handler_data.msg_handler != NULL, "");
+			__ASSERT(sub->msg_handler != NULL, "");
 			void *msg = pub_sub_msg_fifo_get(&sub->fifo, K_NO_WAIT);
 			while (msg != NULL) {
 				// Need to take the semaphore for each msg published
@@ -111,8 +111,7 @@ static void callback_direct_publish_handler(struct pub_sub_broker *broker)
 				}
 				// Call the message handler and then release the message
 				uint16_t msg_id = pub_sub_msg_get_msg_id(msg);
-				sub->handler_data.msg_handler(msg_id, msg,
-							      sub->handler_data.user_data);
+				sub->msg_handler(sub, msg_id, msg);
 				pub_sub_release_msg(msg);
 				msg = pub_sub_msg_fifo_get(&sub->fifo, K_NO_WAIT);
 			}
@@ -145,9 +144,8 @@ static void process_msg(struct pub_sub_broker *broker, uint16_t msg_id, void *ms
 		    atomic_test_bit(sub->subs_bitarray, msg_id)) {
 			switch (sub->rx_type) {
 			case PUB_SUB_RX_TYPE_CALLBACK: {
-				__ASSERT(sub->handler_data.msg_handler != NULL, "");
-				sub->handler_data.msg_handler(msg_id, msg,
-							      sub->handler_data.user_data);
+				__ASSERT(sub->msg_handler != NULL, "");
+				sub->msg_handler(sub, msg_id, msg);
 				break;
 			}
 			case PUB_SUB_RX_TYPE_FIFO: {

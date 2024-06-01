@@ -3,7 +3,7 @@
 A publish subscribe message passing framework built on top of Zephyr RTOS. It provides zero copy
 message passing with reference counted message allocation. It also supports publishing statically
 allocated messages and publishing messages from ISRs. Messages are received by subscribers in the
-order published and three different types of subscriber message queuing are supported.
+order published and two different types of subscriber message queuing are supported.
 
 ## Overview
 

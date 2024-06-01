@@ -1,6 +1,5 @@
 menuconfig HSM
 	bool "Hierarchical State Machine"
-	select PUB_SUB
 	help
 	  Enables the hierarchical state machine framework
 

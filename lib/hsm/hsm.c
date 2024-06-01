@@ -3,53 +3,25 @@
  */
 #include <hsm/hsm.h>
 #include <sys/types.h>
+#include <stddef.h>
+#include <zephyr/kernel.h>
 
-static void msg_handler(uint16_t msg_id, const void *msg, void *user_data);
 static void transition_state(struct hsm *hsm, hsm_state_fn new_state);
+static enum hsm_ret null_state(struct hsm *hsm, uint16_t msg_id, const void *msg);
 
-void hsm_init(struct hsm *hsm, hsm_state_fn initial_state)
+void hsm_start(struct hsm *hsm, hsm_state_fn initial_state)
 {
 	__ASSERT(hsm != NULL, "");
-	__ASSERT(initial_state != NULL, "");
-	hsm->current_state = initial_state;
-
-	pub_sub_subscriber_set_handler_data(&hsm->subscriber, msg_handler, hsm);
+	// To start the HSM we set the current state to the null state and then transition to the
+	// initial state. The initial state and all of its parents will receive an entry message as
+	// the null state will not be a parent of the initial state.
+	hsm->current_state = null_state;
+	transition_state(hsm, initial_state);
 }
 
-void hsm_start(struct hsm *hsm)
-{
-	__ASSERT(hsm != NULL, "");
-	__ASSERT(hsm->current_state != NULL, "");
-	// To start we want to send an ENTRY message to the current state and all of its parents
-	enum hsm_ret ret;
-	hsm_state_fn parents[CONFIG_HSM_MAX_NESTED_STATES];
-	ssize_t num_parents = -1;
-	hsm->tmp_state = hsm->current_state;
-	// Collect all of the parents
-	do {
-		__ASSERT(hsm->tmp_state != NULL, "");
-		ret = hsm->tmp_state(hsm, HSM_MSG_ID_WALK, NULL);
-		__ASSERT((ret == HSM_RET_PARENT) || (ret == HSM_RET_TOP_STATE),
-			 "Walk message must be ignored");
-		num_parents++;
-		parents[num_parents] = hsm->tmp_state;
-	} while ((ret == HSM_RET_PARENT) && (num_parents < (ARRAY_SIZE(parents) - 1)));
-
-	// Iterate down through the parents so the top states get the ENTRY message first
-	for (ssize_t i = num_parents - 1; i >= 0; i--) {
-		// Ignore the return, transitions are not allowed from ENTRY and we don't care if
-		// each state consumes the message or not
-		__ASSERT(parents[i] != NULL, "");
-		(void)parents[i](hsm, HSM_MSG_ID_ENTRY, NULL);
-	}
-	// Finally, send an ENTRY to the current state
-	(void)hsm->current_state(hsm, HSM_MSG_ID_ENTRY, NULL);
-}
-
-static void msg_handler(uint16_t msg_id, const void *msg, void *user_data)
+void hsm_run(struct hsm *hsm, uint16_t msg_id, const void *msg)
 {
 	enum hsm_ret ret;
-	struct hsm *hsm = (struct hsm *)user_data;
 	hsm->tmp_state = hsm->current_state;
 	do {
 		__ASSERT(hsm->tmp_state != NULL, "");
@@ -130,14 +102,25 @@ static void transition_state(struct hsm *hsm, hsm_state_fn new_state)
 	// we don't want to send an ENTRY to the common parent as the state machine is already in
 	// that parent state.
 	for (ssize_t i = common_parent_index - 1; i >= 0; i--) {
+		__ASSERT(parents[i] != NULL, "");
+		ret = parents[i](hsm, HSM_MSG_ID_ENTRY, NULL);
+		__ASSERT(ret != HSM_RET_TRANSITION, "Can not transition from entry");
 		// Ignore the return, transitions are not allowed from ENTRY and we don't care if
 		// each state consumes the message or not
-		__ASSERT(parents[i] != NULL, "");
-		(void)parents[i](hsm, HSM_MSG_ID_ENTRY, NULL);
+		(void)ret;
 	}
 	__ASSERT(new_state != NULL, "");
-	(void)new_state(hsm, HSM_MSG_ID_ENTRY, NULL);
+	ret = new_state(hsm, HSM_MSG_ID_ENTRY, NULL);
+	__ASSERT(ret != HSM_RET_TRANSITION, "Can not transition from entry");
+	// Ignore the return, transitions are not allowed from ENTRY and we don't care if
+	// each state consumes the message or not
+	(void)ret;
 
 	// Finally, update the current state to be the new state
 	hsm->current_state = new_state;
+}
+
+static enum hsm_ret null_state(struct hsm *hsm, uint16_t msg_id, const void *msg)
+{
+	return HSM_TOP_STATE();
 }

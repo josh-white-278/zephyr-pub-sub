@@ -5,7 +5,11 @@
 #include <pub_sub/delayable_msg.h>
 #include <zephyr/ztest.h>
 #include <stdlib.h>
-#include <helpers.h>
+
+#define assert_rx_msg(_rx_msg, _subscriber, _msg_id, _msg_ptr)                                     \
+	zassert_equal(_rx_msg.subscriber, _subscriber);                                            \
+	zassert_equal(_rx_msg.msg_id, _msg_id);                                                    \
+	zassert_equal_ptr(_rx_msg.msg_ptr, _msg_ptr)
 
 enum msg_id {
 	MSG_ID_SUBSCRIBED_ID_0,
@@ -18,10 +22,19 @@ enum msg_id {
 struct test_msg {
 };
 
-struct expected_msg {
+struct rx_msg {
+	struct pub_sub_subscriber *subscriber;
 	uint16_t msg_id;
-	void *msg;
+	const void *msg_ptr;
 };
+
+struct test_subscriber {
+	PUB_SUB_SUBSCRIBER_COMPOSE(MSG_ID_MAX_PUB_ID);
+	struct k_msgq *rx_msgq;
+	bool blocked;
+};
+
+static void msg_handler(struct pub_sub_subscriber *subscriber, uint16_t msg_id, const void *msg);
 
 PUB_SUB_STATIC_DELAYABLE_MSG_DEFINE(struct test_msg, g_sub_0_msg_0, MSG_ID_TIMER_0, NULL);
 PUB_SUB_STATIC_DELAYABLE_MSG_DEFINE(struct test_msg, g_sub_0_msg_1, MSG_ID_TIMER_1, NULL);
@@ -29,82 +42,91 @@ PUB_SUB_STATIC_DELAYABLE_MSG_DEFINE(struct test_msg, g_sub_0_msg_2, MSG_ID_TIMER
 PUB_SUB_STATIC_DELAYABLE_MSG_DEFINE(struct test_msg, g_sub_1_msg_0, MSG_ID_TIMER_0, NULL);
 PUB_SUB_STATIC_DELAYABLE_MSG_DEFINE(struct test_msg, g_sub_1_msg_1, MSG_ID_TIMER_1, NULL);
 PUB_SUB_STATIC_DELAYABLE_MSG_DEFINE(struct test_msg, g_sub_1_msg_2, MSG_ID_TIMER_2, NULL);
-struct fifo_subscriber *g_test_subscriber_0;
-struct fifo_subscriber *g_test_subscriber_1;
-struct expected_msg g_sub_0_expected_msg;
-struct expected_msg g_sub_1_expected_msg;
 
-static void msg_handler(uint16_t msg_id, const void *msg, void *user_data)
-{
-	struct expected_msg *expected_msg = user_data;
-	zassert_equal(msg_id, expected_msg->msg_id);
-	zassert_equal_ptr(msg, expected_msg->msg);
-}
+K_MSGQ_DEFINE(g_rx_msg_queue, sizeof(struct rx_msg), 32, 1);
 
-static void after_test_msg_handler(uint16_t msg_id, const void *msg, void *user_data)
+static struct test_subscriber g_test_subscriber_0 = {
+	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(g_test_subscriber_0, msg_handler, MSG_ID_MAX_PUB_ID,
+					 PUB_SUB_RX_TYPE_FIFO, 0),
+	.rx_msgq = &g_rx_msg_queue,
+	.blocked = false,
+};
+static struct test_subscriber g_test_subscriber_1 = {
+	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(g_test_subscriber_1, msg_handler, MSG_ID_MAX_PUB_ID,
+					 PUB_SUB_RX_TYPE_FIFO, 0),
+	.rx_msgq = &g_rx_msg_queue,
+	.blocked = false,
+};
+
+static void msg_handler(struct pub_sub_subscriber *subscriber, uint16_t msg_id, const void *msg)
 {
+	struct test_subscriber *test_subscriber =
+		PUB_SUB_CONTAINER_FROM_SUBSCRIBER(subscriber, struct test_subscriber);
+	struct rx_msg rx_msg = {
+		.subscriber = subscriber,
+		.msg_id = msg_id,
+		.msg_ptr = msg,
+	};
+	k_msgq_put(test_subscriber->rx_msgq, &rx_msg, K_FOREVER);
 }
 
 static void *delayable_msg_suite_setup(void)
 {
-	reset_default_broker();
-	g_test_subscriber_0 = malloc_fifo_subscriber(MSG_ID_MAX_PUB_ID);
-	g_test_subscriber_1 = malloc_fifo_subscriber(MSG_ID_MAX_PUB_ID);
+	pub_sub_delayable_msg_init(g_sub_0_msg_0,
+				   PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0),
+				   MSG_ID_TIMER_0);
+	pub_sub_delayable_msg_init(g_sub_0_msg_1,
+				   PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0),
+				   MSG_ID_TIMER_1);
+	pub_sub_delayable_msg_init(g_sub_0_msg_2,
+				   PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0),
+				   MSG_ID_TIMER_2);
+	pub_sub_delayable_msg_init(g_sub_1_msg_0,
+				   PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_1),
+				   MSG_ID_TIMER_0);
+	pub_sub_delayable_msg_init(g_sub_1_msg_1,
+				   PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_1),
+				   MSG_ID_TIMER_1);
+	pub_sub_delayable_msg_init(g_sub_1_msg_2,
+				   PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_1),
+				   MSG_ID_TIMER_2);
 
-	pub_sub_delayable_msg_init(g_sub_0_msg_0, &g_test_subscriber_0->subscriber, MSG_ID_TIMER_0);
-	pub_sub_delayable_msg_init(g_sub_0_msg_1, &g_test_subscriber_0->subscriber, MSG_ID_TIMER_1);
-	pub_sub_delayable_msg_init(g_sub_0_msg_2, &g_test_subscriber_0->subscriber, MSG_ID_TIMER_2);
-	pub_sub_delayable_msg_init(g_sub_1_msg_0, &g_test_subscriber_1->subscriber, MSG_ID_TIMER_0);
-	pub_sub_delayable_msg_init(g_sub_1_msg_1, &g_test_subscriber_1->subscriber, MSG_ID_TIMER_1);
-	pub_sub_delayable_msg_init(g_sub_1_msg_2, &g_test_subscriber_1->subscriber, MSG_ID_TIMER_2);
-
-	pub_sub_subscriber_set_handler_data(&g_test_subscriber_0->subscriber, msg_handler,
-					    &g_sub_0_expected_msg);
-	pub_sub_subscriber_set_handler_data(&g_test_subscriber_1->subscriber, msg_handler,
-					    &g_sub_1_expected_msg);
-	pub_sub_add_subscriber(&g_test_subscriber_0->subscriber);
-	pub_sub_add_subscriber(&g_test_subscriber_1->subscriber);
+	pub_sub_add_subscriber(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0));
+	pub_sub_add_subscriber(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_1));
 	return NULL;
-}
-
-static void delayable_msg_suite_teardown(void *fixture)
-{
-	reset_default_broker();
 }
 
 static void delayable_msg_before_test(void *fixture)
 {
-	pub_sub_subscriber_set_handler_data(&g_test_subscriber_0->subscriber, msg_handler,
-					    &g_sub_0_expected_msg);
-	pub_sub_subscriber_set_handler_data(&g_test_subscriber_1->subscriber, msg_handler,
-					    &g_sub_1_expected_msg);
+	g_test_subscriber_0.blocked = false;
+	g_test_subscriber_1.blocked = false;
 }
 
 static void delayable_msg_after_test(void *fixture)
 {
 	ARG_UNUSED(fixture);
 	// Abort all of the messages and handle any queued messages
-	(void)pub_sub_delayable_msg_abort(g_sub_0_msg_0);
-	(void)pub_sub_delayable_msg_abort(g_sub_0_msg_1);
-	(void)pub_sub_delayable_msg_abort(g_sub_0_msg_2);
-	(void)pub_sub_delayable_msg_abort(g_sub_1_msg_0);
-	(void)pub_sub_delayable_msg_abort(g_sub_1_msg_1);
-	(void)pub_sub_delayable_msg_abort(g_sub_1_msg_2);
-	pub_sub_subscriber_set_handler_data(&g_test_subscriber_0->subscriber,
-					    after_test_msg_handler, NULL);
-	pub_sub_subscriber_set_handler_data(&g_test_subscriber_1->subscriber,
-					    after_test_msg_handler, NULL);
-	while (pub_sub_handle_queued_msg(&g_test_subscriber_0->subscriber, K_NO_WAIT) == 0) {
-	}
-	while (pub_sub_handle_queued_msg(&g_test_subscriber_1->subscriber, K_NO_WAIT) == 0) {
-	}
+	pub_sub_delayable_msg_abort(g_sub_0_msg_0);
+	pub_sub_delayable_msg_abort(g_sub_0_msg_1);
+	pub_sub_delayable_msg_abort(g_sub_0_msg_2);
+	pub_sub_delayable_msg_abort(g_sub_1_msg_0);
+	pub_sub_delayable_msg_abort(g_sub_1_msg_1);
+	pub_sub_delayable_msg_abort(g_sub_1_msg_2);
+
+	// Sleep to let the subscribers run and then purge any messages put into the rx msgq
+	g_test_subscriber_0.blocked = false;
+	g_test_subscriber_1.blocked = false;
+	k_sleep(K_MSEC(10));
+	k_msgq_purge(&g_rx_msg_queue);
 }
 
 ZTEST(delayable_msg, test_wait_queue)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	struct pub_sub_subscriber *subscriber_1 = &g_test_subscriber_1->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_1 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_1);
 
 	// Start the 6 messages out of order with different timeouts
 	pub_sub_delayable_msg_start(g_sub_0_msg_1, K_MSEC(300));
@@ -116,49 +138,41 @@ ZTEST(delayable_msg, test_wait_queue)
 
 	// Each message should be received at the correct time
 	int64_t start_ms = k_uptime_get();
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(100));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 	zassert_equal(k_uptime_get() - start_ms, 100);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_MSEC(100));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 	zassert_equal(k_uptime_get() - start_ms, 200);
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_0, g_sub_1_msg_0);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(100));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 	zassert_equal(k_uptime_get() - start_ms, 300);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_1, g_sub_0_msg_1);
 
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_MSEC(100));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 	zassert_equal(k_uptime_get() - start_ms, 400);
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_1, g_sub_1_msg_1);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(100));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 	zassert_equal(k_uptime_get() - start_ms, 500);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_2, g_sub_0_msg_2);
 
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_MSEC(100));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 	zassert_equal(k_uptime_get() - start_ms, 600);
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_2, g_sub_1_msg_2);
 }
 
 ZTEST(delayable_msg, test_is_active)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
 
 	zassert_false(pub_sub_delayable_msg_is_active(g_sub_0_msg_0));
+
+	// Block subscriber from handling messages
+	g_test_subscriber_0.blocked = true;
 
 	// After starting the message should be active
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
@@ -174,21 +188,21 @@ ZTEST(delayable_msg, test_is_active)
 	k_sleep(K_MSEC(200));
 	zassert_true(pub_sub_delayable_msg_is_active(g_sub_0_msg_0));
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
+	g_test_subscriber_0.blocked = false;
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(1)));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 	// Message should now be queued with the subscriber so is no longer active
 	zassert_false(pub_sub_delayable_msg_is_active(g_sub_0_msg_0));
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 	zassert_false(pub_sub_delayable_msg_is_active(g_sub_0_msg_0));
 }
 
 ZTEST(delayable_msg, test_same_timeout)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
 
 	// Start 2 messages with the same timeout
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
@@ -196,24 +210,22 @@ ZTEST(delayable_msg, test_same_timeout)
 
 	// Each message should be received at the correct time
 	int64_t start_ms = k_uptime_get();
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(100));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 	zassert_equal(k_uptime_get() - start_ms, 100);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
 	zassert_equal(k_uptime_get() - start_ms, 100);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_1, g_sub_0_msg_1);
 }
 
 ZTEST(delayable_msg, test_expired_queue)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	struct pub_sub_subscriber *subscriber_1 = &g_test_subscriber_1->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_1 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_1);
 
 	// Start the 6 messages
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
@@ -225,24 +237,19 @@ ZTEST(delayable_msg, test_expired_queue)
 	pub_sub_delayable_msg_start(g_sub_1_msg_2, K_MSEC(250));
 
 	// Only handle the messages for subscriber 0
+	g_test_subscriber_1.blocked = true;
 	int64_t start_ms = k_uptime_get();
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(101));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(101)));
 	zassert_equal(k_uptime_get() - start_ms, 100);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(101));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(101)));
 	zassert_equal(k_uptime_get() - start_ms, 201);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_1, g_sub_0_msg_1);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(101));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(101)));
 	zassert_equal(k_uptime_get() - start_ms, 302);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_2, g_sub_0_msg_2);
 
 	// Start all of the subscriber 1 messages even though they haven't been handled
 	pub_sub_delayable_msg_start(g_sub_1_msg_0, K_MSEC(50));
@@ -253,53 +260,48 @@ ZTEST(delayable_msg, test_expired_queue)
 	for (int i = 0; i < 10; i++) {
 		start_ms = k_uptime_get();
 		pub_sub_delayable_msg_start(g_sub_0_msg_2, K_MSEC(101));
-		ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(101));
-		zassert_ok(ret);
+		zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(101)));
 		zassert_equal(k_uptime_get() - start_ms, 101);
+		assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_2, g_sub_0_msg_2);
 	}
 
 	start_ms = k_uptime_get();
 	// All of the queued messages can be received by subscriber 1
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
+	g_test_subscriber_1.blocked = false;
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(2)));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_0, g_sub_1_msg_0);
 
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_1, g_sub_1_msg_1);
 
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_2, g_sub_1_msg_2);
 
-	zassert_equal(k_uptime_get() - start_ms, 0);
+	zassert_equal(k_uptime_get() - start_ms, 2);
 
 	// All of the expired messages can be received by subscriber 1
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_0, g_sub_1_msg_0);
 
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_1, g_sub_1_msg_1);
 
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
-	zassert_equal(k_uptime_get() - start_ms, 0);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_2, g_sub_1_msg_2);
+
+	zassert_equal(k_uptime_get() - start_ms, 2);
 }
 
 ZTEST(delayable_msg, test_expired_interleaved)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	struct pub_sub_subscriber *subscriber_1 = &g_test_subscriber_1->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_1 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_1);
+
+	g_test_subscriber_0.blocked = true;
+	g_test_subscriber_1.blocked = true;
 
 	// Start the 6 messages and let them expire
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
@@ -323,76 +325,62 @@ ZTEST(delayable_msg, test_expired_interleaved)
 	k_sleep(K_MSEC(500));
 
 	// Only handle the messages for subscriber 0, both queued and expired
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
+	g_test_subscriber_0.blocked = false;
+	// Queued messages
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(1)));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_1, g_sub_0_msg_1);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
-	// Expired messages should be received within 5 ms
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(5));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_2, g_sub_0_msg_2);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
+	// Expired messages
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_1, g_sub_0_msg_1);
+
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_2, g_sub_0_msg_2);
 
 	// Handle the queued and expired messages for subscriber 1
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
+	g_test_subscriber_1.blocked = false;
 
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
+	// Queued messages
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(2)));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_0, g_sub_1_msg_0);
 
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
-	// Expired messages should be received within 5 ms
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_MSEC(5));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_1, g_sub_1_msg_1);
 
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_2, g_sub_1_msg_2);
 
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
+	// Expired messages
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_0, g_sub_1_msg_0);
+
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_1, g_sub_1_msg_1);
+
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_2, g_sub_1_msg_2);
 }
 
 ZTEST(delayable_msg, test_start_msg_with_expired)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	struct pub_sub_subscriber *subscriber_1 = &g_test_subscriber_1->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_1 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_1);
 	int64_t start_ms;
 
 	// Get a subscriber_1 message into the expired queue
+	g_test_subscriber_1.blocked = true;
 	pub_sub_delayable_msg_start(g_sub_1_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(150));
 	pub_sub_delayable_msg_start(g_sub_1_msg_0, K_MSEC(100));
@@ -403,42 +391,42 @@ ZTEST(delayable_msg, test_start_msg_with_expired)
 
 	start_ms = k_uptime_get();
 
-	// Subscriber 1 should receive its expired message within 5 ms
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_MSEC(5));
-	zassert_ok(ret);
-	zassert_true((k_uptime_get() - start_ms) <= 5);
+	// Subscriber 1 should receive its queued and expired message
+	g_test_subscriber_1.blocked = false;
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(1)));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_0, g_sub_1_msg_0);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_0, g_sub_1_msg_0);
+	zassert_equal(k_uptime_get() - start_ms, 1);
 
 	// Get subscriber_1 message back into the expired queue within subscriber_0's message
 	// timeout
+	g_test_subscriber_1.blocked = true;
 	pub_sub_delayable_msg_start(g_sub_1_msg_0, K_MSEC(1));
 	k_sleep(K_MSEC(3));
 	pub_sub_delayable_msg_start(g_sub_1_msg_0, K_MSEC(1));
 	k_sleep(K_MSEC(3));
 
 	// subscriber_0's message should be received at the correct time
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(100));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 	zassert_equal(k_uptime_get() - start_ms, 100);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 
-	// Subscriber 1 should receive its expired message within 5 ms
+	// Subscriber 1 should receive its queued and expired message
 	start_ms = k_uptime_get();
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_MSEC(5));
-	zassert_ok(ret);
-	zassert_true((k_uptime_get() - start_ms) <= 5);
+	g_test_subscriber_1.blocked = false;
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(2)));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_0, g_sub_1_msg_0);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_0, g_sub_1_msg_0);
+	zassert_equal(k_uptime_get() - start_ms, 2);
 }
 
 ZTEST(delayable_msg, test_abort_msg)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start a message
@@ -450,8 +438,7 @@ ZTEST(delayable_msg, test_abort_msg)
 	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should not be received
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(100));
-	zassert_not_ok(ret);
+	zassert_not_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 
 	// Start two messages
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
@@ -465,11 +452,9 @@ ZTEST(delayable_msg, test_abort_msg)
 	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The second message should be received at the correct time
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(200));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(200)));
 	zassert_equal(k_uptime_get() - start_ms, 200);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_1, g_sub_0_msg_1);
 
 	// Start three messages
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
@@ -484,28 +469,27 @@ ZTEST(delayable_msg, test_abort_msg)
 	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_1));
 
 	// The first message should be received at the correct time
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(100));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 	zassert_equal(k_uptime_get() - start_ms, 100);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 
 	// The third message should be received at the correct time
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(300));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(300)));
 	zassert_equal(k_uptime_get() - start_ms, 300);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_2, g_sub_0_msg_2);
 }
 
 ZTEST(delayable_msg, test_abort_msg_with_expired)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	struct pub_sub_subscriber *subscriber_1 = &g_test_subscriber_1->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_1 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_1);
 	int64_t start_ms;
 
 	// Start a message and let it expire then start it again and let it expire
+	g_test_subscriber_1.blocked = true;
 	pub_sub_delayable_msg_start(g_sub_1_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(150));
 	pub_sub_delayable_msg_start(g_sub_1_msg_0, K_MSEC(100));
@@ -520,8 +504,7 @@ ZTEST(delayable_msg, test_abort_msg_with_expired)
 	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should not be received
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(100));
-	zassert_not_ok(ret);
+	zassert_not_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 
 	// Start two messages
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
@@ -535,11 +518,9 @@ ZTEST(delayable_msg, test_abort_msg_with_expired)
 	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The second message should be received at the correct time
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(200));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(200)));
 	zassert_equal(k_uptime_get() - start_ms, 200);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_1, g_sub_0_msg_1);
 
 	// Start three messages
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
@@ -554,34 +535,31 @@ ZTEST(delayable_msg, test_abort_msg_with_expired)
 	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_1));
 
 	// The first message should be received at the correct time
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(100));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
 	zassert_equal(k_uptime_get() - start_ms, 100);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 
 	// The third message should be received at the correct time
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(300));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(300)));
 	zassert_equal(k_uptime_get() - start_ms, 300);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_2, g_sub_0_msg_2);
 
 	// The queued and expired message should be able to be received
-	g_sub_1_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_1_expected_msg.msg = g_sub_1_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_NO_WAIT);
-	zassert_ok(ret);
-	ret = pub_sub_handle_queued_msg(subscriber_1, K_MSEC(5));
-	zassert_ok(ret);
+	g_test_subscriber_1.blocked = false;
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(2)));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_0, g_sub_1_msg_0);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_NO_WAIT));
+	assert_rx_msg(rx_msg, subscriber_1, MSG_ID_TIMER_0, g_sub_1_msg_0);
 }
 
 ZTEST(delayable_msg, test_abort_queued_msg)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
 
-	// Start a message and let it expire
+	// Start a message and let it expire but don't let it be handled
+	g_test_subscriber_0.blocked = true;
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(100));
 
@@ -590,14 +568,14 @@ ZTEST(delayable_msg, test_abort_queued_msg)
 	zassert_true(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should be received
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
+	g_test_subscriber_0.blocked = false;
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(1)));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 	// Was aborted should return false after the aborted message has been handled
 	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
-	// Start a message and let it expire twice
+	// Start a message and let it expire twice without being handled
+	g_test_subscriber_0.blocked = true;
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(100));
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
@@ -608,20 +586,19 @@ ZTEST(delayable_msg, test_abort_queued_msg)
 	zassert_true(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should be received once
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
+	g_test_subscriber_0.blocked = false;
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(1)));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 	// Was aborted should return false after the aborted message has been handled
 	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(200));
-	zassert_not_ok(ret);
+	zassert_not_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(200)));
 }
 
 ZTEST(delayable_msg, test_update_single_msg)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start a message and pass some time
@@ -634,11 +611,9 @@ ZTEST(delayable_msg, test_update_single_msg)
 	start_ms = k_uptime_get();
 
 	// The message should be received at the correct time
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 200);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 
 	// Start a message and pass some time
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(200));
@@ -650,15 +625,16 @@ ZTEST(delayable_msg, test_update_single_msg)
 	start_ms = k_uptime_get();
 
 	// The message should be received at the correct time
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 100);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 }
 
 ZTEST(delayable_msg, test_update_multi_msg)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start three messages and pass some time
@@ -677,32 +653,28 @@ ZTEST(delayable_msg, test_update_multi_msg)
 	start_ms = k_uptime_get();
 
 	// The messages should be received at the correct time
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 50);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_2, g_sub_0_msg_2);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 150);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_1, g_sub_0_msg_1);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 250);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 }
 
 ZTEST(delayable_msg, test_update_single_msg_with_expired)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start a message and let it expire then start it again and let it expire
+	g_test_subscriber_1.blocked = true;
 	pub_sub_delayable_msg_start(g_sub_1_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(150));
 	pub_sub_delayable_msg_start(g_sub_1_msg_0, K_MSEC(100));
@@ -718,11 +690,9 @@ ZTEST(delayable_msg, test_update_single_msg_with_expired)
 	start_ms = k_uptime_get();
 
 	// The message should be received at the correct time
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 200);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 
 	// Start a message and pass some time
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(200));
@@ -734,18 +704,20 @@ ZTEST(delayable_msg, test_update_single_msg_with_expired)
 	start_ms = k_uptime_get();
 
 	// The message should be received at the correct time
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 100);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 }
 
 ZTEST(delayable_msg, test_update_multi_msg_with_expired)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start a message and let it expire then start it again and let it expire
+	g_test_subscriber_1.blocked = true;
 	pub_sub_delayable_msg_start(g_sub_1_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(150));
 	pub_sub_delayable_msg_start(g_sub_1_msg_0, K_MSEC(100));
@@ -767,32 +739,28 @@ ZTEST(delayable_msg, test_update_multi_msg_with_expired)
 	start_ms = k_uptime_get();
 
 	// The messages should be received at the correct time
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_2;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_2;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 50);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_2, g_sub_0_msg_2);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_1;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_1;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 150);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_1, g_sub_0_msg_1);
 
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 250);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 }
 
 ZTEST(delayable_msg, test_update_queued_msg)
 {
-	struct pub_sub_subscriber *subscriber_0 = &g_test_subscriber_0->subscriber;
-	int ret;
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 =
+		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start a message and let it expire
+	g_test_subscriber_0.blocked = true;
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(100));
 
@@ -802,19 +770,19 @@ ZTEST(delayable_msg, test_update_queued_msg)
 	start_ms = k_uptime_get();
 
 	// The queued message should be received immediately
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
+	g_test_subscriber_0.blocked = false;
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(1)));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 	// Was aborted should return false after the restarted message has been handled
 	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should also be received after the updated timeout
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 200);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 
-	// Start the message and let it expire twice
+	// Start the message and let it expire twice without handling it
+	g_test_subscriber_0.blocked = true;
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
 	k_sleep(K_MSEC(100));
 	pub_sub_delayable_msg_start(g_sub_0_msg_0, K_MSEC(100));
@@ -826,18 +794,38 @@ ZTEST(delayable_msg, test_update_queued_msg)
 	start_ms = k_uptime_get();
 
 	// The queued message should be received immediately
-	g_sub_0_expected_msg.msg_id = MSG_ID_TIMER_0;
-	g_sub_0_expected_msg.msg = g_sub_0_msg_0;
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_NO_WAIT);
-	zassert_ok(ret);
+	g_test_subscriber_0.blocked = false;
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(1)));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 	// Was aborted should return false after the restarted message has been handled
 	zassert_false(pub_sub_delayable_msg_was_aborted(g_sub_0_msg_0));
 
 	// The message should also be received after the updated timeout
-	ret = pub_sub_handle_queued_msg(subscriber_0, K_MSEC(250));
-	zassert_ok(ret);
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(250)));
 	zassert_equal(k_uptime_get() - start_ms, 200);
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, g_sub_0_msg_0);
 }
 
 ZTEST_SUITE(delayable_msg, NULL, delayable_msg_suite_setup, delayable_msg_before_test,
-	    delayable_msg_after_test, delayable_msg_suite_teardown);
+	    delayable_msg_after_test, NULL);
+
+void fifo_thread_handler(void *unused0, void *unused1, void *unused2)
+{
+	while (1) {
+		k_timepoint_t end_time = sys_timepoint_calc(K_MSEC(1));
+		if (!g_test_subscriber_0.blocked) {
+			while (pub_sub_handle_queued_msg(
+				       PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_0),
+				       sys_timepoint_timeout(end_time)) == 0) {
+			}
+		}
+		if (!g_test_subscriber_1.blocked) {
+			while (pub_sub_handle_queued_msg(
+				       PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber_1),
+				       sys_timepoint_timeout(end_time)) == 0) {
+			}
+		}
+		k_sleep(sys_timepoint_timeout(end_time));
+	}
+}
+K_THREAD_DEFINE(fifo_thread, 4096, fifo_thread_handler, NULL, NULL, NULL, -1, 0, 0);

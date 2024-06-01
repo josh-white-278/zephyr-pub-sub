@@ -2,14 +2,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <hsm/hsm.h>
-#include <pub_sub/msg_alloc_mem_slab.h>
 #include <zephyr/ztest.h>
 #include <stdlib.h>
 
-#define TEST_MSG_SIZE_BYTES 8
-
 enum msg_id {
-	MSG_ID_MAX_PUB_ID,
 	MSG_ID_TEST_GET_CURRENT_STATE,
 	MSG_ID_TEST_START_RX,
 	MSG_ID_TEST_SUB_STATE_RX,
@@ -35,8 +31,6 @@ struct test_hsm {
 	int num_msg_received;
 };
 
-PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(test_allocator, TEST_MSG_SIZE_BYTES, 32);
-PUB_SUB_SUBS_BITARRAY_DEFINE(test_sub_bitarray, MSG_ID_MAX_PUB_ID);
 struct test_hsm test_hsm;
 
 static enum hsm_ret test_top_state(struct hsm *hsm, uint16_t msg_id, const void *msg)
@@ -237,48 +231,27 @@ static enum hsm_ret test_diff_child_state(struct hsm *hsm, uint16_t msg_id, cons
 
 static void publish_msg(struct hsm *hsm, uint16_t msg_id)
 {
-	void *msg = pub_sub_new_msg(&test_allocator, msg_id, TEST_MSG_SIZE_BYTES, K_NO_WAIT);
-	zassert_not_null(msg);
-	pub_sub_publish_to_subscriber(&hsm->subscriber, msg);
-	// Delay to allow HSM to run
-	k_sleep(K_MSEC(1));
+	hsm_run(hsm, msg_id, NULL);
 }
 
 static void publish_transition_state(struct hsm *hsm, uint16_t msg_id, hsm_state_fn dest_state)
 {
-	struct transition_msg *msg =
-		pub_sub_new_msg(&test_allocator, msg_id, sizeof(struct transition_msg), K_NO_WAIT);
-	zassert_not_null(msg);
-	msg->dest_state = dest_state;
-	pub_sub_publish_to_subscriber(&hsm->subscriber, msg);
-	// Delay to allow HSM to run
-	k_sleep(K_MSEC(1));
+	struct transition_msg msg = {
+		.dest_state = dest_state,
+	};
+	hsm_run(hsm, msg_id, &msg);
 }
 
 static void before_test(void *fixture)
 {
 	ARG_UNUSED(fixture);
-	pub_sub_init_callback_subscriber(&test_hsm.hsm.subscriber, test_sub_bitarray,
-					 MSG_ID_MAX_PUB_ID);
-	hsm_init(&test_hsm.hsm, test_start_state);
-	pub_sub_add_subscriber(&test_hsm.hsm.subscriber);
-	hsm_start(&test_hsm.hsm);
+	hsm_start(&test_hsm.hsm, test_start_state);
 	test_hsm.num_msg_received = 0;
-}
-
-static void after_test(void *fixture)
-{
-	ARG_UNUSED(fixture);
-	pub_sub_subscriber_remove_broker(&test_hsm.hsm.subscriber);
-
-	// Check for leaked messages
-	struct k_mem_slab *mem_slab = test_allocator.impl;
-	__ASSERT(k_mem_slab_num_used_get(mem_slab) == 0, "");
 }
 
 ZTEST(hsm_basic, test_start)
 {
-	hsm_start(&test_hsm.hsm);
+	hsm_start(&test_hsm.hsm, test_start_state);
 	// Expect all parents and start state to have received entry message
 	zassert_equal(test_hsm.num_msg_received, 3);
 	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_top_state);
@@ -531,8 +504,7 @@ static enum hsm_ret test_recursive_state(struct hsm *hsm, uint16_t msg_id, const
 
 ZTEST(hsm_basic, test_state_depth)
 {
-	hsm_init(&test_hsm.hsm, test_recursive_state);
-	hsm_start(&test_hsm.hsm);
+	hsm_start(&test_hsm.hsm, test_recursive_state);
 	// Expect CONFIG_HSM_MAX_NESTED_STATES start messages
 	zassert_equal(test_hsm.num_msg_received, CONFIG_HSM_MAX_NESTED_STATES);
 	for (size_t i = 0; i < CONFIG_HSM_MAX_NESTED_STATES; i++) {
@@ -574,4 +546,4 @@ ZTEST(hsm_basic, test_state_depth)
 	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_GET_CURRENT_STATE);
 }
 
-ZTEST_SUITE(hsm_basic, NULL, NULL, before_test, after_test, NULL);
+ZTEST_SUITE(hsm_basic, NULL, NULL, before_test, NULL, NULL);
