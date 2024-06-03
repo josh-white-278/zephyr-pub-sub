@@ -41,8 +41,8 @@ PUB_SUB_STATIC_MSG_DEFINE(struct static_msg, g_static_msg, MSG_ID_SUBSCRIBED_ID_
 PUB_SUB_STATIC_CALLBACK_MSG_DEFINE(struct static_msg, g_callback_msg, MSG_ID_SUBSCRIBED_ID_0,
 				   msg_callback);
 static struct test_subscriber g_test_subscriber = {
-	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(g_test_subscriber, msg_handler, MSG_ID_MAX_PUB_ID,
-					 PUB_SUB_RX_TYPE_CALLBACK, 0),
+	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(g_test_subscriber, &k_sys_work_q, msg_handler,
+					 MSG_ID_MAX_PUB_ID, 0),
 	.rx_msgq = &g_rx_msg_queue,
 };
 

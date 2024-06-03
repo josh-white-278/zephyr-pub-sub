@@ -2,8 +2,7 @@
 
 A publish subscribe message passing framework built on top of Zephyr RTOS. It provides zero copy
 message passing with reference counted message allocation. It also supports publishing statically
-allocated messages and publishing messages from ISRs. Messages are received by subscribers in the
-order published and two different types of subscriber message queuing are supported.
+allocated messages and publishing messages from ISRs.
 
 ## Overview
 
@@ -58,18 +57,17 @@ allocator will run out of messages to allocate.
 3. Runtime message allocators added
 4. Message allocators added to allocator pools
 5. Subscribers initialized
-6. Subscribers configured
-7. Subscribers added to broker
+6. Subscribers added to broker
 
 ## Broker
 
 A broker is responsible for managing message routing and acquiring/releasing message references for
 its subscribers. It maintains a list of subscribers in order of priority. When a message is received
 on its publish queue it iterates through the list checking each subscriber's subscriptions. If a
-subscription is found the message is passed to the subscriber through its selected queuing
-mechanism. The broker acquires and releases references to messages as required, subscribers should
-not have to worry about it unless they are manually acquiring additional references. Messages can
-only be published to a single broker due to the FIFO message queuing mechanism used by the broker.
+subscription is found the message is passed to the subscriber. The broker acquires and releases
+references to messages as required, subscribers should not have to worry about it unless they are
+manually acquiring additional references. Messages can only be published to a single broker due to
+the FIFO message queuing mechanism used by the broker.
 
 ### Default Broker
 
@@ -78,52 +76,32 @@ A default broker is provided for convenience, it can be disabled with
 
 ## Subscribers
 
-There are two different types of subscriber:
-
-* Callback
-* FIFO
-
-Although each type receives its messages slightly different they all receive them through a handler
-function. In the case of the callback subscriber the handler is called directly by the broker
-whereas FIFO subscribers need to call a polling function from their own threads. The polling
-function manages dequeuing messages, calling the handler function and releasing message references
-as required. In general a message handler function should not block but if care is taken as to the
-type of subscriber (FIFO), its priority and its subscriptions it might be possible to run blocking
-operations in some cases.
+A subscriber receives any messages published to it through its message handler function where the
+handler function is always called from the subscriber's work queue thread. In general a subscriber
+should try to avoid blocking operations in the handler function as it can block lower priority
+subscribers from receiving messages that both are subscribed to. This is due to the internal FIFO
+message queuing which only allows a message to be queued with a single subscriber at once. As long
+as care is taken as to the priority of each subscriber this limitation should (hopefully) not
+overally constrain an application.
 
 Each subscriber maintains a subscriptions bit-array which indicates which message identifiers the
 subscriber has subscribed to. This bit-array is provided to the subscriber at initialization time
-and must be sized correctly to prevent buffer overruns. The size is based on the maximum message
-identifier that will be published as each bit represents a subscription to a message identifier
-value.
+and must be sized correctly to prevent buffer overruns. The size is based on the maximum public
+message identifier that will be published as each bit represents a subscription to a message
+identifier value.
 
 A subscriber can only be added to a single broker. Once a subscriber is added to a broker it will
 begin to receive the messages it has subscribed to. If a subscriber does not want to miss any
 messages it should be added to the broker and its subscriptions set during the initialization phase
-prior to any messages being published. Before a subscriber is added to a broker its message handler
-must be set and, if required, its priority value.
+prior to any messages being published.
 
-A subscriber's priority value is used to sort the subscriber relative to other subscribers of the
-same type in the broker's list of subscribers. This allows fine-grained control of the order that
-the broker publishes messages to its subscribers. A subscriber's priority value is only checked when
-it is added to the broker so updating the priority after being added will only take effect if the
-subscriber is removed and then added back to the broker.
-
-### Callback subscriber details
-
-The callback subscriber is the highest priority type and all callback subscribers will receive a
-message before any other type. The callback subscriber type has its message handler function called
-directly from the broker's message processing thread. This means that the handler function can not
-block as it will block all other subscribers from receiving messages.
-
-### FIFO subscriber details
-
-The FIFO subscriber is the lowest priority type and all other subscriber types will receive a
-message before a FIFO type. The FIFO subscriber can not block the broker's message processing thread
-however a published message can only be queued on a single FIFO so a high priority FIFO subscriber
-can block a message from reaching a lower priority FIFO subscriber if it does not process its queued
-messages fast enough. Also if the FIFO subscribers are not prioritized correctly then there could be
-needless thread context switching if a high priority subscriber is running on a low priority thread.
+A subscriber's priority value is used to sort the subscriber relative to other subscribers in the
+broker's list of subscribers. This allows fine-grained control of the order that the broker
+publishes messages to its subscribers. The priority value selected for a subscriber should be
+aligned with the subscriber's work queue priority i.e. a high priority subscriber should not be run
+on a low priority work queue. A subscriber's priority value is only checked when it is added to the
+broker so updating the priority after being added will only take affect if the subscriber is removed
+and then added back to the broker.
 
 ## Messages
 
@@ -137,7 +115,7 @@ and an atomic variable that is split into three parts:
 
 In general access to messages is provided by a `void *` pointer that points at the message bytes of
 the message. Access to the message header values is provided via functions that operation on the
-`void *` message pointer.
+`void *` message pointer e.g. `uint16_t pub_sub_msg_get_msg_id(const void *msg)`.
 
 ### Message allocation
 
@@ -164,20 +142,22 @@ cost of slightly less efficient message allocation.
 
 ### Static messages
 
-Statically allocated message can be sent through a broker provided it has reserved memory for the
-message header. Prior to being published the message must first be initialized and then it must be
-aquired prior to every publish. When using static messages care must be taken by the publisher not
-to re-use the static message until it is certain that it has been fully handled by all of its
-subscribers. For regular static messages the reference counter should be checked, when it reaches
-zero the publisher can re-use it.
+Statically allocated messages can be sent through a broker provided it has reserved memory for the
+message header. A static messsage must be initialized before being published for the first time to
+ensure it has its message header values set correctly. Additionally a reference to the message must
+be aquired prior to every publish to ensure that the message's reference counter is one when it is
+published. When using static messages care must be taken by the publisher not to re-use the static
+message until it is certain that it has been fully handled by all of its subscribers. For regular
+static messages the reference counter should be checked, when it reaches zero the publisher can
+re-use it.
 
 ### Callback static messages
 
 A callback static message is a static message with an additional callback function. All of the above
 caveats about static messages apply. When the callback message's reference counter reaches 0 the
 callback is called to indicate the message is now free to be re-used. The callback is called from
-the context of the last reference holder to release the message so care must be taken not to block
-within the callback.
+the context of the last reference holder to release the message so care must be taken with the
+operations performed within the callback.
 
 ### Delayable messages
 
@@ -205,16 +185,18 @@ should always be checked first to ensure its state is correct. E.g.:
 ``` C
 static void msg_handler(uint16_t msg_id, const void *msg, void *user_data)
 {
-   switch (msg_id) {
-   case MSG_ID_DELAYABLE_MSG: {
-      if (!pub_sub_delayable_msg_was_aborted(msg)) {
-         pub_sub_delayable_msg_start(msg, K_MSEC(500));
-         // pub_sub_delayable_msg_was_aborted(msg) will now return true until the msg_handler
-         // returns and the message is freed.
-      }
-      break;
-   }
-   }
+    switch (msg_id) {
+    case MSG_ID_DELAYABLE_MSG: {
+        if (!pub_sub_delayable_msg_was_aborted(msg)) {
+            // When the message is started here the message's reference counter is non-zero which
+            // means the message's aborted flag will be set
+            pub_sub_delayable_msg_start(msg, K_MSEC(500));
+            // pub_sub_delayable_msg_was_aborted(msg) will now return true until the msg_handler
+            // returns and the message is released.
+        }
+        break;
+    }
+    }
 };
 ```
 
@@ -235,7 +217,5 @@ processing overhead for messages that are only received by a single subscriber.
 
 * Sample app
 * HSM documentation
-* Better initialization mechanics for HSMs and subscribers
 * Heap message allocator
-* Ability to run the broker publish handling on a thread or a different work queue
-* Linker section subscribers + macros for static init of run time subscribers
+* Linker section subscribers

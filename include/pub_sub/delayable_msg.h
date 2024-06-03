@@ -8,8 +8,7 @@
 extern "C" {
 #endif
 
-#include <pub_sub/msg_alloc.h>
-#include <pub_sub/subscriber.h>
+#include <pub_sub/pub_sub.h>
 
 struct pub_sub_msg_delayable_header {
 	k_timepoint_t end_time;

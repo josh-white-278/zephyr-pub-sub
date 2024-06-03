@@ -1,11 +1,10 @@
 if (CONFIG_PUB_SUB)
     zephyr_sources(
-        broker.c
+        pub_sub.c
         delayable_msg.c
         msg_alloc.c
         msg_alloc_mem_slab.c
         msg_alloc_pool.c
-        subscriber.c
     )
 
     zephyr_linker_sources(SECTIONS pub_sub.ld)

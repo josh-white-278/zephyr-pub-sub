@@ -34,7 +34,7 @@ struct test_hsm {
 PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(test_allocator, sizeof(struct transition_msg), 32);
 
 struct test_hsm test_hsm = {
-	HSM_SUB_INIT_COMPOSED(test_hsm, MSG_ID_MAX_PUB_ID, PUB_SUB_RX_TYPE_CALLBACK, 0),
+	HSM_SUB_INIT_COMPOSED(test_hsm, &k_sys_work_q, MSG_ID_MAX_PUB_ID, 0),
 };
 
 static enum hsm_ret test_top_state(struct hsm *hsm, uint16_t msg_id, const void *msg)
