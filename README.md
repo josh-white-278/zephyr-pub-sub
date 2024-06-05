@@ -187,14 +187,16 @@ static void msg_handler(uint16_t msg_id, const void *msg, void *user_data)
 {
     switch (msg_id) {
     case MSG_ID_DELAYABLE_MSG: {
-        if (!pub_sub_delayable_msg_was_aborted(msg)) {
-            // When the message is started here the message's reference counter is non-zero which
-            // means the message's aborted flag will be set
-            pub_sub_delayable_msg_start(msg, K_MSEC(500));
-            // pub_sub_delayable_msg_was_aborted(msg) will now return true until the msg_handler
-            // returns and the message is released.
-        }
-        break;
+        struct pub_sub_delayable_msg *delayable_msg =
+            PUB_SUB_MSG_TO_DELAYABLE_MSG(struct pub_sub_delayable_msg, msg);
+        if (!pub_sub_delayable_msg_was_aborted(delayable_msg)) {
+           // When the message is started here the message's reference counter is
+            // non-zero which means the message's aborted flag will be set
+           pub_sub_delayable_msg_start(delayable_msg, K_MSEC(500));
+           // pub_sub_delayable_msg_was_aborted(delayable_msg) will now return
+           // true until the msg_handler returns and the message is released.
+       }
+       break;
     }
     }
 };
