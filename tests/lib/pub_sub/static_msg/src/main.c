@@ -61,8 +61,8 @@ static void msg_handler(struct pub_sub_subscriber *subscriber, uint16_t msg_id, 
 
 static void *suite_setup(void)
 {
-	pub_sub_add_subscriber(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber));
-	pub_sub_subscribe(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(g_test_subscriber),
+	pub_sub_add_subscriber(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber));
+	pub_sub_subscribe(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber),
 			  MSG_ID_SUBSCRIBED_ID_0);
 	return NULL;
 }

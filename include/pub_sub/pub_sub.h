@@ -135,7 +135,7 @@ void pub_sub_subscriber_work_handler(struct k_work *work);
  *
  * @param _composite The struct to get the subscriber pointer from
  */
-#define PUB_SUB_COMPOSED_SUBSCRIBER_PTR(_composite) (&(_composite)._subscriber)
+#define PUB_SUB_COMPOSED_SUBSCRIBER_PTR(_composite) (&((_composite)->_subscriber))
 
 /**
  * @brief Retrieve a pointer to the composite struct from a composed subscriber pointer

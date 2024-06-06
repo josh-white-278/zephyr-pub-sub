@@ -97,7 +97,7 @@ void publish_msg(uint16_t msg_id)
 	void *msg = pub_sub_new_msg(&test_allocator, msg_id, 0, K_NO_WAIT);
 	zassert_not_null(msg);
 	if (msg_id > MSG_ID_MAX_PUB_ID) {
-		pub_sub_publish_to_subscriber(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(test_hsm), msg);
+		pub_sub_publish_to_subscriber(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(&test_hsm), msg);
 	} else {
 		pub_sub_publish(msg);
 	}
@@ -111,16 +111,16 @@ static void publish_transition_state(uint16_t msg_id, hsm_state_fn dest_state)
 		pub_sub_new_msg(&test_allocator, msg_id, sizeof(struct transition_msg), K_NO_WAIT);
 	zassert_not_null(msg);
 	msg->dest_state = dest_state;
-	pub_sub_publish_to_subscriber(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(test_hsm), msg);
+	pub_sub_publish_to_subscriber(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(&test_hsm), msg);
 	// Delay to allow HSM to run
 	k_sleep(K_MSEC(1));
 }
 
 static void *suite_setup(void)
 {
-	pub_sub_subscribe(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(test_hsm), MSG_ID_PUBLIC_MSG);
-	pub_sub_add_subscriber(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(test_hsm));
-	hsm_start(HSM_SUB_COMPOSED_HSM_PTR(test_hsm), test_start_state);
+	pub_sub_subscribe(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(&test_hsm), MSG_ID_PUBLIC_MSG);
+	pub_sub_add_subscriber(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(&test_hsm));
+	hsm_start(HSM_SUB_COMPOSED_HSM_PTR(&test_hsm), test_start_state);
 	return NULL;
 }
 

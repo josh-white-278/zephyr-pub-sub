@@ -49,7 +49,7 @@ struct hsm_subscriber {
  *
  * @param _composite The struct to get the subscriber pointer from
  */
-#define HSM_SUB_COMPOSED_SUBSCRIBER_PTR(_composite) (&(_composite)._hsm_subscriber.subscriber)
+#define HSM_SUB_COMPOSED_SUBSCRIBER_PTR(_composite) (&((_composite)->_hsm_subscriber.subscriber))
 
 /**
  * @brief Retrieve a pointer to the composite struct from a composed hsm_subscriber's subscriber
@@ -66,7 +66,7 @@ struct hsm_subscriber {
  *
  * @param _composite The struct to get the hsm pointer from
  */
-#define HSM_SUB_COMPOSED_HSM_PTR(_composite) (&(_composite)._hsm_subscriber.hsm)
+#define HSM_SUB_COMPOSED_HSM_PTR(_composite) (&((_composite)->_hsm_subscriber.hsm))
 
 /**
  * @brief Retrieve a pointer to the composite struct from a composed hsm_subscriber's hsm pointer

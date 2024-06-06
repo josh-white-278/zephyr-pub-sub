@@ -71,14 +71,14 @@ static struct test_subscriber work_q_1_subscriber_2 = {
 };
 
 static struct pub_sub_subscriber *work_q_0_subscribers[NUM_SUBSCRIBERS] = {
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(work_q_0_subscriber_0),
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(work_q_0_subscriber_1),
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(work_q_0_subscriber_2),
+	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_0),
+	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_1),
+	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_2),
 };
 static struct pub_sub_subscriber *work_q_1_subscribers[NUM_SUBSCRIBERS] = {
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(work_q_1_subscriber_0),
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(work_q_1_subscriber_1),
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(work_q_1_subscriber_2),
+	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_0),
+	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_1),
+	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_2),
 };
 
 static void test_msg_handler(struct pub_sub_subscriber *subscriber, uint16_t msg_id,
