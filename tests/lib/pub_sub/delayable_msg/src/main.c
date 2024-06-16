@@ -48,14 +48,17 @@ struct k_work_q g_sub_1_work_q;
 
 static struct test_subscriber g_test_subscriber_0 = {
 	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(g_test_subscriber_0, &g_sub_0_work_q, msg_handler,
-					 MSG_ID_MAX_PUB_ID, 0),
+					 MSG_ID_MAX_PUB_ID),
 	.rx_msgq = &g_rx_msg_queue,
 };
+PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0), 0);
+
 static struct test_subscriber g_test_subscriber_1 = {
 	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(g_test_subscriber_1, &g_sub_1_work_q, msg_handler,
-					 MSG_ID_MAX_PUB_ID, 0),
+					 MSG_ID_MAX_PUB_ID),
 	.rx_msgq = &g_rx_msg_queue,
 };
+PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1), 0);
 
 static PUB_SUB_TIMER_MSG_DEFINE(g_sub_0_msg_0, MSG_ID_TIMER_0,
 				PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0));
@@ -101,8 +104,6 @@ static void *delayable_msg_suite_setup(void)
 				   PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1),
 				   MSG_ID_TIMER_2);
 
-	pub_sub_add_subscriber(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0));
-	pub_sub_add_subscriber(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1));
 	return NULL;
 }
 

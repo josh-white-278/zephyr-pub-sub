@@ -50,15 +50,6 @@ returns. The acquired reference must be released before the message can be re-us
 reference is dropped without being released then the message will leak and it is likely the
 allocator will run out of messages to allocate.
 
-### Initialization Order
-
-1. Broker initialized
-2. Runtime message allocators initialized
-3. Runtime message allocators added
-4. Message allocators added to allocator pools
-5. Subscribers initialized
-6. Subscribers added to broker
-
 ## Broker
 
 A broker is responsible for managing message routing and acquiring/releasing message references for
@@ -220,4 +211,3 @@ processing overhead for messages that are only received by a single subscriber.
 * Sample app
 * HSM documentation
 * Heap message allocator
-* Linker section subscribers

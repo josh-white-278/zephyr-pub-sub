@@ -54,12 +54,10 @@ static struct test_subscriber work_q_0_subscriber_1 = {
 };
 PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_1), 1);
 
+// We will use the run time init function to initialize this one's subscriber
 static struct test_subscriber work_q_0_subscriber_2 = {
-	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(work_q_0_subscriber_2, &k_sys_work_q, test_msg_handler,
-					 MSG_ID_MAX_PUB_ID),
 	.rx_msgq = &g_rx_msg_queue,
 };
-PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_2), 2);
 
 static struct test_subscriber work_q_1_subscriber_0 = {
 	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(work_q_1_subscriber_0, &g_subs_work_q, test_msg_handler,
@@ -75,12 +73,10 @@ static struct test_subscriber work_q_1_subscriber_1 = {
 };
 PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_1), 4);
 
+// We will use the run time init function to initialize this one's subscriber
 static struct test_subscriber work_q_1_subscriber_2 = {
-	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(work_q_1_subscriber_2, &g_subs_work_q, test_msg_handler,
-					 MSG_ID_MAX_PUB_ID),
 	.rx_msgq = &g_rx_msg_queue,
 };
-PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_2), 5);
 
 static struct pub_sub_subscriber *work_q_0_subscribers[NUM_SUBSCRIBERS] = {
 	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_0),
@@ -114,6 +110,15 @@ static void *suite_setup(void)
 	k_work_queue_start(&g_subs_work_q, g_subs_work_q_stack,
 			   K_KERNEL_STACK_SIZEOF(g_subs_work_q_stack),
 			   CONFIG_SYSTEM_WORKQUEUE_PRIORITY + 1, NULL);
+	// Initialize the two uninitialized subscribers with the run time initialization function
+	pub_sub_init_subscriber(&work_q_0_subscriber_2._subscriber, &k_sys_work_q, test_msg_handler,
+				work_q_0_subscriber_2._subs_bitarray, MSG_ID_MAX_PUB_ID);
+	pub_sub_init_subscriber(&work_q_1_subscriber_2._subscriber, &g_subs_work_q,
+				test_msg_handler, work_q_1_subscriber_2._subs_bitarray,
+				MSG_ID_MAX_PUB_ID);
+
+	pub_sub_add_subscriber(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_2), 2);
+	pub_sub_add_subscriber(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_2), 5);
 	return NULL;
 }
 
@@ -191,6 +196,19 @@ ZTEST(subscriber, test_unsubscribe)
 ZTEST(subscriber, test_priority)
 {
 	struct rx_msg rx_msg;
+	// Remove all of the subscribers so we can test priority sorting
+	for (size_t i = 0; i < NUM_SUBSCRIBERS; i++) {
+		pub_sub_subscriber_remove_broker(work_q_0_subscribers[i]);
+		pub_sub_subscriber_remove_broker(work_q_1_subscribers[i]);
+	}
+	// Add the subscribers and test that they are sorted by priority
+	pub_sub_add_subscriber(work_q_1_subscribers[1], 4);
+	pub_sub_add_subscriber(work_q_0_subscribers[1], 1);
+	pub_sub_add_subscriber(work_q_1_subscribers[2], 5);
+	pub_sub_add_subscriber(work_q_0_subscribers[2], 2);
+	pub_sub_add_subscriber(work_q_1_subscribers[0], 3);
+	pub_sub_add_subscriber(work_q_0_subscribers[0], 0);
+
 	void *msg = pub_sub_new_msg(&test_allocator, MSG_ID_ALL_SUBSCRIBED, 0, K_NO_WAIT);
 	zassert_not_null(msg);
 	pub_sub_publish(msg);

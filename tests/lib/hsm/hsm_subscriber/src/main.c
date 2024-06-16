@@ -34,8 +34,9 @@ struct test_hsm {
 PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(test_allocator, sizeof(struct transition_msg), 32);
 
 struct test_hsm test_hsm = {
-	HSM_SUB_INIT_COMPOSED(test_hsm, &k_sys_work_q, MSG_ID_MAX_PUB_ID, 0),
+	HSM_SUB_INIT_COMPOSED(test_hsm, &k_sys_work_q, MSG_ID_MAX_PUB_ID),
 };
+PUB_SUB_SUBSCRIBER_ADD(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(&test_hsm), 0);
 
 static enum hsm_ret test_top_state(struct hsm *hsm, uint16_t msg_id, const void *msg)
 {
@@ -119,7 +120,6 @@ static void publish_transition_state(uint16_t msg_id, hsm_state_fn dest_state)
 static void *suite_setup(void)
 {
 	pub_sub_subscribe(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(&test_hsm), MSG_ID_PUBLIC_MSG);
-	pub_sub_add_subscriber(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(&test_hsm));
 	hsm_start(HSM_SUB_COMPOSED_HSM_PTR(&test_hsm), test_start_state);
 	return NULL;
 }

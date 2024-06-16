@@ -31,16 +31,15 @@ struct hsm_subscriber {
  * @param _composite The composite struct the hsm_subscriber belongs to
  * @param _work_q The work queue the subscriber is to run on
  * @param _max_msg_id The maximum message id that the subscriber will subscribe to
- * @param _priority The priority value to set
  */
-#define HSM_SUB_INIT_COMPOSED(_composite, _work_q, _max_msg_id, _priority)                         \
+#define HSM_SUB_INIT_COMPOSED(_composite, _work_q, _max_msg_id)                                    \
 	._hsm_subscriber =                                                                         \
 		{                                                                                  \
 			.hsm = {},                                                                 \
 			.subscriber = PUB_SUB_SUBSCRIBER_INITIALIZER(                              \
 				_composite._hsm_subscriber.subscriber, _work_q,                    \
 				hsm_subscriber_msg_handler, _composite._subs_bitarray,             \
-				_max_msg_id, _priority),                                           \
+				_max_msg_id),                                                      \
 	},                                                                                         \
 	._subs_bitarray = {}
 

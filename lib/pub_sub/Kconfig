@@ -10,6 +10,10 @@ config PUB_SUB_DEFAULT_BROKER
 	bool "Default pub/sub broker"
 	default y
 
+config PUB_SUB_RUNTIME_SUBSCRIBERS
+	bool "Add subscribers to brokers at runtime"
+	default n
+
 config PUB_SUB_RUNTIME_ALLOCATORS
 	bool "Runtime allocators"
 
