@@ -26,7 +26,7 @@ struct msg_rx_data {
 };
 
 struct test_hsm {
-	HSM_SUB_COMPOSE(MSG_ID_MAX_PUB_ID);
+	HSM_SUB_ADD_CMPNT(MSG_ID_MAX_PUB_ID);
 	struct msg_rx_data msg_rx_data[16];
 	int num_msg_received;
 };
@@ -34,9 +34,9 @@ struct test_hsm {
 PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(test_allocator, sizeof(struct transition_msg), 32);
 
 struct test_hsm test_hsm = {
-	HSM_SUB_INIT_COMPOSED(test_hsm, &k_sys_work_q, MSG_ID_MAX_PUB_ID),
+	HSM_SUB_INIT_CMPNT(test_hsm, &k_sys_work_q, MSG_ID_MAX_PUB_ID),
 };
-PUB_SUB_SUBSCRIBER_ADD(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(&test_hsm), 0);
+PUB_SUB_SUBSCRIBER_ADD(HSM_SUB_SUBSCRIBER_CMPNT(&test_hsm), 0);
 
 static enum hsm_ret test_top_state(struct hsm *hsm, uint16_t msg_id, const void *msg)
 {
@@ -98,7 +98,7 @@ void publish_msg(uint16_t msg_id)
 	void *msg = pub_sub_new_msg(&test_allocator, msg_id, 0, K_NO_WAIT);
 	zassert_not_null(msg);
 	if (msg_id > MSG_ID_MAX_PUB_ID) {
-		pub_sub_publish_to_subscriber(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(&test_hsm), msg);
+		pub_sub_publish_to_subscriber(HSM_SUB_SUBSCRIBER_CMPNT(&test_hsm), msg);
 	} else {
 		pub_sub_publish(msg);
 	}
@@ -112,15 +112,15 @@ static void publish_transition_state(uint16_t msg_id, hsm_state_fn dest_state)
 		pub_sub_new_msg(&test_allocator, msg_id, sizeof(struct transition_msg), K_NO_WAIT);
 	zassert_not_null(msg);
 	msg->dest_state = dest_state;
-	pub_sub_publish_to_subscriber(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(&test_hsm), msg);
+	pub_sub_publish_to_subscriber(HSM_SUB_SUBSCRIBER_CMPNT(&test_hsm), msg);
 	// Delay to allow HSM to run
 	k_sleep(K_MSEC(1));
 }
 
 static void *suite_setup(void)
 {
-	pub_sub_subscribe(HSM_SUB_COMPOSED_SUBSCRIBER_PTR(&test_hsm), MSG_ID_PUBLIC_MSG);
-	hsm_start(HSM_SUB_COMPOSED_HSM_PTR(&test_hsm), test_start_state);
+	pub_sub_subscribe(HSM_SUB_SUBSCRIBER_CMPNT(&test_hsm), MSG_ID_PUBLIC_MSG);
+	hsm_start(HSM_SUB_HSM_CMPNT(&test_hsm), test_start_state);
 	return NULL;
 }
 

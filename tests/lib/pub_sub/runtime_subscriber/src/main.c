@@ -27,7 +27,7 @@ struct rx_msg {
 };
 
 struct test_subscriber {
-	PUB_SUB_SUBSCRIBER_COMPOSE(MSG_ID_MAX_PUB_ID);
+	PUB_SUB_ADD_SUBSCRIBER_CMPNT(MSG_ID_MAX_PUB_ID);
 	struct k_msgq *rx_msgq;
 };
 
@@ -41,18 +41,18 @@ static K_KERNEL_STACK_DEFINE(g_subs_work_q_stack, CONFIG_SYSTEM_WORKQUEUE_STACK_
 struct k_work_q g_subs_work_q;
 
 static struct test_subscriber work_q_0_subscriber_0 = {
-	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(work_q_0_subscriber_0, &k_sys_work_q, test_msg_handler,
-					 MSG_ID_MAX_PUB_ID),
+	PUB_SUB_INIT_SUBSCRIBER_CMPNT(work_q_0_subscriber_0, &k_sys_work_q, test_msg_handler,
+				      MSG_ID_MAX_PUB_ID),
 	.rx_msgq = &g_rx_msg_queue,
 };
-PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_0), 0);
+PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_SUBSCRIBER_CMPNT(&work_q_0_subscriber_0), 0);
 
 static struct test_subscriber work_q_0_subscriber_1 = {
-	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(work_q_0_subscriber_1, &k_sys_work_q, test_msg_handler,
-					 MSG_ID_MAX_PUB_ID),
+	PUB_SUB_INIT_SUBSCRIBER_CMPNT(work_q_0_subscriber_1, &k_sys_work_q, test_msg_handler,
+				      MSG_ID_MAX_PUB_ID),
 	.rx_msgq = &g_rx_msg_queue,
 };
-PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_1), 1);
+PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_SUBSCRIBER_CMPNT(&work_q_0_subscriber_1), 1);
 
 // We will use the run time init function to initialize this one's subscriber
 static struct test_subscriber work_q_0_subscriber_2 = {
@@ -60,18 +60,18 @@ static struct test_subscriber work_q_0_subscriber_2 = {
 };
 
 static struct test_subscriber work_q_1_subscriber_0 = {
-	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(work_q_1_subscriber_0, &g_subs_work_q, test_msg_handler,
-					 MSG_ID_MAX_PUB_ID),
+	PUB_SUB_INIT_SUBSCRIBER_CMPNT(work_q_1_subscriber_0, &g_subs_work_q, test_msg_handler,
+				      MSG_ID_MAX_PUB_ID),
 	.rx_msgq = &g_rx_msg_queue,
 };
-PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_0), 3);
+PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_SUBSCRIBER_CMPNT(&work_q_1_subscriber_0), 3);
 
 static struct test_subscriber work_q_1_subscriber_1 = {
-	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(work_q_1_subscriber_1, &g_subs_work_q, test_msg_handler,
-					 MSG_ID_MAX_PUB_ID),
+	PUB_SUB_INIT_SUBSCRIBER_CMPNT(work_q_1_subscriber_1, &g_subs_work_q, test_msg_handler,
+				      MSG_ID_MAX_PUB_ID),
 	.rx_msgq = &g_rx_msg_queue,
 };
-PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_1), 4);
+PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_SUBSCRIBER_CMPNT(&work_q_1_subscriber_1), 4);
 
 // We will use the run time init function to initialize this one's subscriber
 static struct test_subscriber work_q_1_subscriber_2 = {
@@ -79,14 +79,14 @@ static struct test_subscriber work_q_1_subscriber_2 = {
 };
 
 static struct pub_sub_subscriber *work_q_0_subscribers[NUM_SUBSCRIBERS] = {
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_0),
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_1),
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_2),
+	PUB_SUB_SUBSCRIBER_CMPNT(&work_q_0_subscriber_0),
+	PUB_SUB_SUBSCRIBER_CMPNT(&work_q_0_subscriber_1),
+	PUB_SUB_SUBSCRIBER_CMPNT(&work_q_0_subscriber_2),
 };
 static struct pub_sub_subscriber *work_q_1_subscribers[NUM_SUBSCRIBERS] = {
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_0),
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_1),
-	PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_2),
+	PUB_SUB_SUBSCRIBER_CMPNT(&work_q_1_subscriber_0),
+	PUB_SUB_SUBSCRIBER_CMPNT(&work_q_1_subscriber_1),
+	PUB_SUB_SUBSCRIBER_CMPNT(&work_q_1_subscriber_2),
 };
 
 static void test_msg_handler(struct pub_sub_subscriber *subscriber, uint16_t msg_id,
@@ -117,8 +117,8 @@ static void *suite_setup(void)
 				test_msg_handler, work_q_1_subscriber_2._subs_bitarray,
 				MSG_ID_MAX_PUB_ID);
 
-	pub_sub_add_subscriber(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_0_subscriber_2), 2);
-	pub_sub_add_subscriber(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&work_q_1_subscriber_2), 5);
+	pub_sub_add_subscriber(PUB_SUB_SUBSCRIBER_CMPNT(&work_q_0_subscriber_2), 2);
+	pub_sub_add_subscriber(PUB_SUB_SUBSCRIBER_CMPNT(&work_q_1_subscriber_2), 5);
 	return NULL;
 }
 

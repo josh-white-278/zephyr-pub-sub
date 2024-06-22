@@ -184,38 +184,37 @@ void pub_sub_subscriber_work_handler(struct k_work *work);
 	}
 
 /**
- * @brief Compose a subscriber into another struct
+ * @brief Add a subscriber component to another struct
  *
  * @param _max_msg_id The maximum message id that the subscriber will subscribe to
  */
-#define PUB_SUB_SUBSCRIBER_COMPOSE(_max_msg_id)                                                    \
+#define PUB_SUB_ADD_SUBSCRIBER_CMPNT(_max_msg_id)                                                  \
 	struct pub_sub_subscriber _subscriber;                                                     \
 	PUB_SUB_SUBS_BITARRAY_DEFINE(_subs_bitarray, _max_msg_id)
 
 /**
- * @brief Statically initialize a subscriber that was composed into another struct with
- * PUB_SUB_SUBSCRIBER_COMPOSE
+ * @brief Statically initialize a subscriber that is a component of another struct
  *
  * @param _composite The composite struct the subscriber belongs to
  * @param _work_q The work queue the subscriber is to run on
  * @param _handler_fn The message handler function of the subscriber
  * @param _max_msg_id The maximum message id that the subscriber will subscribe to
  */
-#define PUB_SUB_SUBSCRIBER_INIT_COMPOSED(_composite, _work_q, _handler_fn, _max_msg_id)            \
+#define PUB_SUB_INIT_SUBSCRIBER_CMPNT(_composite, _work_q, _handler_fn, _max_msg_id)               \
 	._subscriber =                                                                             \
 		PUB_SUB_SUBSCRIBER_INITIALIZER(_composite._subscriber, _work_q, _handler_fn,       \
 					       _composite._subs_bitarray, _max_msg_id),            \
 	._subs_bitarray = {}
 
 /**
- * @brief Retrieve a pointer to the composed subscriber from the composite struct
+ * @brief Retrieve a pointer to the component subscriber from the composite struct
  *
  * @param _composite The struct to get the subscriber pointer from
  */
-#define PUB_SUB_COMPOSED_SUBSCRIBER_PTR(_composite) (&((_composite)->_subscriber))
+#define PUB_SUB_SUBSCRIBER_CMPNT(_composite) (&((_composite)->_subscriber))
 
 /**
- * @brief Retrieve a pointer to the composite struct from a composed subscriber pointer
+ * @brief Retrieve a pointer to the composite struct from a component subscriber pointer
  *
  * @param _ptr A pointer to the subscriber
  * @param _type The name of the type of the composite struct

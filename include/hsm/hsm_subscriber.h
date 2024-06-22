@@ -10,29 +10,31 @@ extern "C" {
 #include <pub_sub/pub_sub.h>
 #include <hsm/hsm.h>
 
+/**
+ * @brief A composite struct containing an hsm component and a subscriber component
+ */
 struct hsm_subscriber {
 	struct hsm hsm;
 	struct pub_sub_subscriber subscriber;
 };
 
 /**
- * @brief Compose a hsm_subscriber into another struct
+ * @brief Add an hsm_subscriber component to another struct
  *
  * @param _max_msg_id The maximum message id that the subscriber will subscribe to
  */
-#define HSM_SUB_COMPOSE(_max_msg_id)                                                               \
+#define HSM_SUB_ADD_CMPNT(_max_msg_id)                                                             \
 	struct hsm_subscriber _hsm_subscriber;                                                     \
 	PUB_SUB_SUBS_BITARRAY_DEFINE(_subs_bitarray, _max_msg_id)
 
 /**
- * @brief Statically initialize a hsm_subscriber that was composed into another struct with
- * HSM_SUB_COMPOSE
+ * @brief Statically initialize a hsm_subscriber that is a component of another struct
  *
  * @param _composite The composite struct the hsm_subscriber belongs to
  * @param _work_q The work queue the subscriber is to run on
  * @param _max_msg_id The maximum message id that the subscriber will subscribe to
  */
-#define HSM_SUB_INIT_COMPOSED(_composite, _work_q, _max_msg_id)                                    \
+#define HSM_SUB_INIT_CMPNT(_composite, _work_q, _max_msg_id)                                       \
 	._hsm_subscriber =                                                                         \
 		{                                                                                  \
 			.hsm = {},                                                                 \
@@ -44,14 +46,14 @@ struct hsm_subscriber {
 	._subs_bitarray = {}
 
 /**
- * @brief Retrieve a pointer to the composed hsm_subscriber's subscriber from the composite struct
+ * @brief Retrieve a pointer to the component hsm_subscriber's subscriber from the composite struct
  *
  * @param _composite The struct to get the subscriber pointer from
  */
-#define HSM_SUB_COMPOSED_SUBSCRIBER_PTR(_composite) (&((_composite)->_hsm_subscriber.subscriber))
+#define HSM_SUB_SUBSCRIBER_CMPNT(_composite) (&((_composite)->_hsm_subscriber.subscriber))
 
 /**
- * @brief Retrieve a pointer to the composite struct from a composed hsm_subscriber's subscriber
+ * @brief Retrieve a pointer to the composite struct from a component hsm_subscriber's subscriber
  * pointer
  *
  * @param _ptr A pointer to the subscriber
@@ -61,14 +63,14 @@ struct hsm_subscriber {
 	(CONTAINER_OF(_ptr, _type, _hsm_subscriber.subscriber))
 
 /**
- * @brief Retrieve a pointer to the composed hsm_subscriber's hsm from the composite struct
+ * @brief Retrieve a pointer to the component hsm_subscriber's hsm from the composite struct
  *
  * @param _composite The struct to get the hsm pointer from
  */
-#define HSM_SUB_COMPOSED_HSM_PTR(_composite) (&((_composite)->_hsm_subscriber.hsm))
+#define HSM_SUB_HSM_CMPNT(_composite) (&((_composite)->_hsm_subscriber.hsm))
 
 /**
- * @brief Retrieve a pointer to the composite struct from a composed hsm_subscriber's hsm pointer
+ * @brief Retrieve a pointer to the composite struct from a component hsm_subscriber's hsm pointer
  *
  * @param _ptr A pointer to the hsm
  * @param _type The name of the type of the composite struct

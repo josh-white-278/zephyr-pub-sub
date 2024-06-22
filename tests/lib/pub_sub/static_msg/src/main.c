@@ -22,7 +22,7 @@ struct rx_msg {
 };
 
 struct test_subscriber {
-	PUB_SUB_SUBSCRIBER_COMPOSE(MSG_ID_MAX_PUB_ID);
+	PUB_SUB_ADD_SUBSCRIBER_CMPNT(MSG_ID_MAX_PUB_ID);
 	struct k_msgq *rx_msgq;
 };
 
@@ -41,11 +41,11 @@ PUB_SUB_STATIC_MSG_DEFINE(struct static_msg, g_static_msg, MSG_ID_SUBSCRIBED_ID_
 PUB_SUB_STATIC_CALLBACK_MSG_DEFINE(struct static_msg, g_callback_msg, MSG_ID_SUBSCRIBED_ID_0,
 				   msg_callback);
 static struct test_subscriber g_test_subscriber = {
-	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(g_test_subscriber, &k_sys_work_q, msg_handler,
-					 MSG_ID_MAX_PUB_ID),
+	PUB_SUB_INIT_SUBSCRIBER_CMPNT(g_test_subscriber, &k_sys_work_q, msg_handler,
+				      MSG_ID_MAX_PUB_ID),
 	.rx_msgq = &g_rx_msg_queue,
 };
-PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber), 0);
+PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber), 0);
 
 static void msg_handler(struct pub_sub_subscriber *subscriber, uint16_t msg_id, const void *msg)
 {
@@ -62,8 +62,7 @@ static void msg_handler(struct pub_sub_subscriber *subscriber, uint16_t msg_id, 
 
 static void *suite_setup(void)
 {
-	pub_sub_subscribe(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber),
-			  MSG_ID_SUBSCRIBED_ID_0);
+	pub_sub_subscribe(PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber), MSG_ID_SUBSCRIBED_ID_0);
 	return NULL;
 }
 

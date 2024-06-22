@@ -32,7 +32,7 @@ struct rx_msg {
 };
 
 struct test_subscriber {
-	PUB_SUB_SUBSCRIBER_COMPOSE(MSG_ID_MAX_PUB_ID);
+	PUB_SUB_ADD_SUBSCRIBER_CMPNT(MSG_ID_MAX_PUB_ID);
 	struct k_msgq *rx_msgq;
 };
 
@@ -47,33 +47,33 @@ static K_KERNEL_STACK_DEFINE(g_sub_1_work_q_stack, CONFIG_SYSTEM_WORKQUEUE_STACK
 struct k_work_q g_sub_1_work_q;
 
 static struct test_subscriber g_test_subscriber_0 = {
-	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(g_test_subscriber_0, &g_sub_0_work_q, msg_handler,
-					 MSG_ID_MAX_PUB_ID),
+	PUB_SUB_INIT_SUBSCRIBER_CMPNT(g_test_subscriber_0, &g_sub_0_work_q, msg_handler,
+				      MSG_ID_MAX_PUB_ID),
 	.rx_msgq = &g_rx_msg_queue,
 };
-PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0), 0);
+PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0), 0);
 
 static struct test_subscriber g_test_subscriber_1 = {
-	PUB_SUB_SUBSCRIBER_INIT_COMPOSED(g_test_subscriber_1, &g_sub_1_work_q, msg_handler,
-					 MSG_ID_MAX_PUB_ID),
+	PUB_SUB_INIT_SUBSCRIBER_CMPNT(g_test_subscriber_1, &g_sub_1_work_q, msg_handler,
+				      MSG_ID_MAX_PUB_ID),
 	.rx_msgq = &g_rx_msg_queue,
 };
-PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1), 0);
+PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_1), 0);
 
 static PUB_SUB_TIMER_MSG_DEFINE(g_sub_0_msg_0, MSG_ID_TIMER_0,
-				PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0));
+				PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0));
 static PUB_SUB_TIMER_MSG_DEFINE(g_sub_0_msg_1, MSG_ID_TIMER_1,
-				PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0));
+				PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0));
 static struct pub_sub_timer_msg g_sub_0_msg_2;
 
 static struct test_delayable_msg g_sub_1_msg_0 = {
 	.header = PUB_SUB_DELAYABLE_MSG_HEADER_INITIALIZER(
-		MSG_ID_TIMER_0, PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1)),
+		MSG_ID_TIMER_0, PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_1)),
 	.msg = {.test_data = 1},
 };
 static struct test_delayable_msg g_sub_1_msg_1 = {
 	.header = PUB_SUB_DELAYABLE_MSG_HEADER_INITIALIZER(
-		MSG_ID_TIMER_1, PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1)),
+		MSG_ID_TIMER_1, PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_1)),
 	.msg = {.test_data = 2},
 };
 static struct test_delayable_msg g_sub_1_msg_2;
@@ -98,11 +98,9 @@ static void *delayable_msg_suite_setup(void)
 			   K_KERNEL_STACK_SIZEOF(g_sub_1_work_q_stack), -1, NULL);
 
 	pub_sub_delayable_msg_init(PUB_SUB_DECLARED_TO_DELAYABLE_MSG(&g_sub_0_msg_2),
-				   PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0),
-				   MSG_ID_TIMER_2);
+				   PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0), MSG_ID_TIMER_2);
 	pub_sub_delayable_msg_init(PUB_SUB_DECLARED_TO_DELAYABLE_MSG(&g_sub_1_msg_2),
-				   PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1),
-				   MSG_ID_TIMER_2);
+				   PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_1), MSG_ID_TIMER_2);
 
 	return NULL;
 }
@@ -128,10 +126,8 @@ static void delayable_msg_after_test(void *fixture)
 ZTEST(delayable_msg, test_wait_queue)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
-	struct pub_sub_subscriber *subscriber_1 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_1 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_1);
 
 	// Start the 6 messages out of order with different timeouts
 	pub_sub_delayable_msg_start(PUB_SUB_DECLARED_TO_DELAYABLE_MSG(&g_sub_0_msg_1), K_MSEC(300));
@@ -171,8 +167,7 @@ ZTEST(delayable_msg, test_wait_queue)
 ZTEST(delayable_msg, test_is_active)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
 
 	zassert_false(
 		pub_sub_delayable_msg_is_active(PUB_SUB_DECLARED_TO_DELAYABLE_MSG(&g_sub_0_msg_0)));
@@ -213,8 +208,7 @@ ZTEST(delayable_msg, test_is_active)
 ZTEST(delayable_msg, test_same_timeout)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
 
 	// Start 2 messages with the same timeout
 	pub_sub_delayable_msg_start(PUB_SUB_DECLARED_TO_DELAYABLE_MSG(&g_sub_0_msg_0), K_MSEC(100));
@@ -234,10 +228,8 @@ ZTEST(delayable_msg, test_same_timeout)
 ZTEST(delayable_msg, test_expired_queue)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
-	struct pub_sub_subscriber *subscriber_1 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_1 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_1);
 
 	// Start the 6 messages
 	pub_sub_delayable_msg_start(PUB_SUB_DECLARED_TO_DELAYABLE_MSG(&g_sub_0_msg_0), K_MSEC(100));
@@ -308,10 +300,8 @@ ZTEST(delayable_msg, test_expired_queue)
 ZTEST(delayable_msg, test_expired_interleaved)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
-	struct pub_sub_subscriber *subscriber_1 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_1 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_1);
 
 	k_thread_suspend(k_work_queue_thread_get(&g_sub_0_work_q));
 	k_thread_suspend(k_work_queue_thread_get(&g_sub_1_work_q));
@@ -386,10 +376,8 @@ ZTEST(delayable_msg, test_expired_interleaved)
 ZTEST(delayable_msg, test_start_msg_with_expired)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
-	struct pub_sub_subscriber *subscriber_1 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_1 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_1);
 	int64_t start_ms;
 
 	// Get a subscriber_1 message into the expired queue
@@ -438,8 +426,7 @@ ZTEST(delayable_msg, test_start_msg_with_expired)
 ZTEST(delayable_msg, test_abort_msg)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start a message
@@ -498,10 +485,8 @@ ZTEST(delayable_msg, test_abort_msg)
 ZTEST(delayable_msg, test_abort_msg_with_expired)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
-	struct pub_sub_subscriber *subscriber_1 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_1);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_1 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_1);
 	int64_t start_ms;
 
 	// Start a message and let it expire then start it again and let it expire
@@ -574,8 +559,7 @@ ZTEST(delayable_msg, test_abort_msg_with_expired)
 ZTEST(delayable_msg, test_abort_queued_msg)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
 
 	// Start a message and let it expire but don't let it be handled
 	k_thread_suspend(k_work_queue_thread_get(&g_sub_0_work_q));
@@ -620,8 +604,7 @@ ZTEST(delayable_msg, test_abort_queued_msg)
 ZTEST(delayable_msg, test_update_single_msg)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start a message and pass some time
@@ -658,8 +641,7 @@ ZTEST(delayable_msg, test_update_single_msg)
 ZTEST(delayable_msg, test_update_multi_msg)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start three messages and pass some time
@@ -697,8 +679,7 @@ ZTEST(delayable_msg, test_update_multi_msg)
 ZTEST(delayable_msg, test_update_single_msg_with_expired)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start a message and let it expire then start it again and let it expire
@@ -742,8 +723,7 @@ ZTEST(delayable_msg, test_update_single_msg_with_expired)
 ZTEST(delayable_msg, test_update_multi_msg_with_expired)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start a message and let it expire then start it again and let it expire
@@ -788,8 +768,7 @@ ZTEST(delayable_msg, test_update_multi_msg_with_expired)
 ZTEST(delayable_msg, test_update_queued_msg)
 {
 	struct rx_msg rx_msg;
-	struct pub_sub_subscriber *subscriber_0 =
-		PUB_SUB_COMPOSED_SUBSCRIBER_PTR(&g_test_subscriber_0);
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
 	int64_t start_ms;
 
 	// Start a message and let it expire
