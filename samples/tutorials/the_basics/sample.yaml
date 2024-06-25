@@ -1,0 +1,7 @@
+sample:
+  name: Tutorial - The Basics
+tests:
+  samples.tutorials.the_basics:
+    tags: pub_sub
+    integration_platforms:
+      - nrf52840dongle_nrf52840

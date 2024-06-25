@@ -7,4 +7,8 @@ manifest:
     - name: zephyr
       remote: zephyrproject-rtos
       revision: ae0ad38
+      import:
+        name-allowlist:
+          - cmsis
+          - hal_nordic
       west-commands: scripts/west-commands.yml

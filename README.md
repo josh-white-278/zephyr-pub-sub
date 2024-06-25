@@ -4,6 +4,8 @@ A publish subscribe message passing framework built on top of Zephyr RTOS. It pr
 message passing with reference counted message allocation. It also supports publishing statically
 allocated messages and publishing messages from ISRs.
 
+## [Tutorials](doc/tutorials/tutorials.md)
+
 ## Overview
 
 ### Message Flow
