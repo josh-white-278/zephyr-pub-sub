@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <zephyr/kernel.h>
 
-static void transition_state(struct hsm *hsm, hsm_state_fn new_state);
+static enum hsm_ret transition_state(struct hsm *hsm, hsm_state_fn new_state);
 static enum hsm_ret null_state(struct hsm *hsm, uint16_t msg_id, const void *msg);
 
 void hsm_start(struct hsm *hsm, hsm_state_fn initial_state)
@@ -16,7 +16,11 @@ void hsm_start(struct hsm *hsm, hsm_state_fn initial_state)
 	// initial state. The initial state and all of its parents will receive an entry message as
 	// the null state will not be a parent of the initial state.
 	hsm->current_state = null_state;
-	transition_state(hsm, initial_state);
+	enum hsm_ret ret = transition_state(hsm, initial_state);
+	while ((ret == HSM_RET_TRANSITION) && (hsm->tmp_state != hsm->current_state)) {
+		__ASSERT(hsm->tmp_state != NULL, "");
+		ret = transition_state(hsm, hsm->tmp_state);
+	}
 }
 
 void hsm_run(struct hsm *hsm, uint16_t msg_id, const void *msg)
@@ -28,13 +32,13 @@ void hsm_run(struct hsm *hsm, uint16_t msg_id, const void *msg)
 		ret = hsm->tmp_state(hsm, msg_id, msg);
 	} while (ret == HSM_RET_PARENT);
 
-	if ((ret == HSM_RET_TRANSITION) && (hsm->tmp_state != hsm->current_state)) {
+	while ((ret == HSM_RET_TRANSITION) && (hsm->tmp_state != hsm->current_state)) {
 		__ASSERT(hsm->tmp_state != NULL, "");
-		transition_state(hsm, hsm->tmp_state);
+		ret = transition_state(hsm, hsm->tmp_state);
 	}
 }
 
-static void transition_state(struct hsm *hsm, hsm_state_fn new_state)
+static enum hsm_ret transition_state(struct hsm *hsm, hsm_state_fn new_state)
 {
 	enum hsm_ret ret;
 	ssize_t common_parent_index = -1;
@@ -104,20 +108,18 @@ static void transition_state(struct hsm *hsm, hsm_state_fn new_state)
 	for (ssize_t i = common_parent_index - 1; i >= 0; i--) {
 		__ASSERT(parents[i] != NULL, "");
 		ret = parents[i](hsm, HSM_MSG_ID_ENTRY, NULL);
-		__ASSERT(ret != HSM_RET_TRANSITION, "Can not transition from entry");
-		// Ignore the return, transitions are not allowed from ENTRY and we don't care if
-		// each state consumes the message or not
-		(void)ret;
+		if (ret == HSM_RET_TRANSITION) {
+			// Transitioning from an entry, the current state becomes the state we just
+			// entered and we return early
+			hsm->current_state = parents[i];
+			return ret;
+		}
 	}
 	__ASSERT(new_state != NULL, "");
 	ret = new_state(hsm, HSM_MSG_ID_ENTRY, NULL);
-	__ASSERT(ret != HSM_RET_TRANSITION, "Can not transition from entry");
-	// Ignore the return, transitions are not allowed from ENTRY and we don't care if
-	// each state consumes the message or not
-	(void)ret;
-
 	// Finally, update the current state to be the new state
 	hsm->current_state = new_state;
+	return ret;
 }
 
 static enum hsm_ret null_state(struct hsm *hsm, uint16_t msg_id, const void *msg)

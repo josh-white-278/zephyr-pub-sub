@@ -229,6 +229,64 @@ static enum hsm_ret test_diff_child_state(struct hsm *hsm, uint16_t msg_id, cons
 	}
 }
 
+static enum hsm_ret test_trans_on_entry_to_start(struct hsm *hsm, uint16_t msg_id, const void *msg)
+{
+	struct test_hsm *test_hsm = CONTAINER_OF(hsm, struct test_hsm, hsm);
+	switch (msg_id) {
+	case HSM_MSG_ID_ENTRY:
+		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn =
+			test_trans_on_entry_to_start;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
+		return HSM_TRANSITION(test_start_state);
+	case HSM_MSG_ID_EXIT:
+	case MSG_ID_TEST_GET_CURRENT_STATE:
+		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn =
+			test_trans_on_entry_to_start;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
+		return HSM_CONSUMED();
+	default:
+		return HSM_PARENT(test_top_state);
+	}
+}
+
+static enum hsm_ret test_trans_on_entry_child_state(struct hsm *hsm, uint16_t msg_id,
+						    const void *msg)
+{
+	struct test_hsm *test_hsm = CONTAINER_OF(hsm, struct test_hsm, hsm);
+	switch (msg_id) {
+	case HSM_MSG_ID_ENTRY:
+	case HSM_MSG_ID_EXIT:
+	case MSG_ID_TEST_GET_CURRENT_STATE:
+		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn =
+			test_trans_on_entry_child_state;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
+		return HSM_CONSUMED();
+	default:
+		return HSM_PARENT(test_trans_on_entry_to_start);
+	}
+}
+
+static enum hsm_ret test_trans_on_entry_to_trans_on_entry_child(struct hsm *hsm, uint16_t msg_id,
+								const void *msg)
+{
+	struct test_hsm *test_hsm = CONTAINER_OF(hsm, struct test_hsm, hsm);
+	switch (msg_id) {
+	case HSM_MSG_ID_ENTRY:
+		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn =
+			test_trans_on_entry_to_trans_on_entry_child;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
+		return HSM_TRANSITION(test_trans_on_entry_child_state);
+	case HSM_MSG_ID_EXIT:
+	case MSG_ID_TEST_GET_CURRENT_STATE:
+		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn =
+			test_trans_on_entry_to_trans_on_entry_child;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
+		return HSM_CONSUMED();
+	default:
+		return HSM_PARENT(test_top_state);
+	}
+}
+
 static void publish_msg(struct hsm *hsm, uint16_t msg_id)
 {
 	hsm_run(hsm, msg_id, NULL);
@@ -477,6 +535,170 @@ ZTEST(hsm_basic, test_transition_from_top)
 	publish_msg(&test_hsm.hsm, MSG_ID_TEST_GET_CURRENT_STATE);
 	zassert_equal(test_hsm.num_msg_received, 1);
 	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_far_state);
+	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_GET_CURRENT_STATE);
+}
+
+ZTEST(hsm_basic, test_transition_on_entry_simple)
+{
+	publish_transition_state(&test_hsm.hsm, MSG_ID_TEST_TRANSITION_START_STATE,
+				 test_trans_on_entry_to_start);
+	// We expect 7 msgs:
+	// start_state: MSG_ID_TEST_TRANSITION_START_STATE
+	// start_state, sub_state: EXIT
+	// trans_on_entry_to_start: ENTRY,EXIT
+	// sub_state, start_state: ENTRY
+	zassert_equal(test_hsm.num_msg_received, 7);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_TRANSITION_START_STATE);
+	zassert_equal(test_hsm.msg_rx_data[1].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[1].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[2].state_fn, test_sub_state);
+	zassert_equal(test_hsm.msg_rx_data[2].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[3].state_fn, test_trans_on_entry_to_start);
+	zassert_equal(test_hsm.msg_rx_data[3].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[4].state_fn, test_trans_on_entry_to_start);
+	zassert_equal(test_hsm.msg_rx_data[4].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[5].state_fn, test_sub_state);
+	zassert_equal(test_hsm.msg_rx_data[5].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[6].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[6].msg_id, HSM_MSG_ID_ENTRY);
+
+	test_hsm.num_msg_received = 0;
+	publish_msg(&test_hsm.hsm, MSG_ID_TEST_GET_CURRENT_STATE);
+	zassert_equal(test_hsm.num_msg_received, 1);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_GET_CURRENT_STATE);
+}
+
+ZTEST(hsm_basic, test_transition_on_entry_parent)
+{
+	publish_transition_state(&test_hsm.hsm, MSG_ID_TEST_TRANSITION_START_STATE,
+				 test_trans_on_entry_child_state);
+	// We expect 7 msgs:
+	// start_state: MSG_ID_TEST_TRANSITION_START_STATE
+	// start_state, sub_state: EXIT
+	// trans_on_entry_to_start: ENTRY,EXIT
+	// sub_state, start_state: ENTRY
+	zassert_equal(test_hsm.num_msg_received, 7);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_TRANSITION_START_STATE);
+	zassert_equal(test_hsm.msg_rx_data[1].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[1].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[2].state_fn, test_sub_state);
+	zassert_equal(test_hsm.msg_rx_data[2].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[3].state_fn, test_trans_on_entry_to_start);
+	zassert_equal(test_hsm.msg_rx_data[3].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[4].state_fn, test_trans_on_entry_to_start);
+	zassert_equal(test_hsm.msg_rx_data[4].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[5].state_fn, test_sub_state);
+	zassert_equal(test_hsm.msg_rx_data[5].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[6].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[6].msg_id, HSM_MSG_ID_ENTRY);
+
+	test_hsm.num_msg_received = 0;
+	publish_msg(&test_hsm.hsm, MSG_ID_TEST_GET_CURRENT_STATE);
+	zassert_equal(test_hsm.num_msg_received, 1);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_GET_CURRENT_STATE);
+}
+
+ZTEST(hsm_basic, test_transition_on_entry_double)
+{
+	publish_transition_state(&test_hsm.hsm, MSG_ID_TEST_TRANSITION_START_STATE,
+				 test_trans_on_entry_to_trans_on_entry_child);
+	// We expect 9 msgs:
+	// start_state: MSG_ID_TEST_TRANSITION_START_STATE
+	// start_state, sub_state: EXIT
+	// trans_on_entry_to_trans_on_entry_child: ENTRY,EXIT
+	// trans_on_entry_to_start: ENTRY,EXIT
+	// sub_state, start_state: ENTRY
+	zassert_equal(test_hsm.num_msg_received, 9);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_TRANSITION_START_STATE);
+	zassert_equal(test_hsm.msg_rx_data[1].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[1].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[2].state_fn, test_sub_state);
+	zassert_equal(test_hsm.msg_rx_data[2].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[3].state_fn,
+		      test_trans_on_entry_to_trans_on_entry_child);
+	zassert_equal(test_hsm.msg_rx_data[3].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[4].state_fn,
+		      test_trans_on_entry_to_trans_on_entry_child);
+	zassert_equal(test_hsm.msg_rx_data[4].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[5].state_fn, test_trans_on_entry_to_start);
+	zassert_equal(test_hsm.msg_rx_data[5].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[6].state_fn, test_trans_on_entry_to_start);
+	zassert_equal(test_hsm.msg_rx_data[6].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[7].state_fn, test_sub_state);
+	zassert_equal(test_hsm.msg_rx_data[7].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[8].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[8].msg_id, HSM_MSG_ID_ENTRY);
+
+	test_hsm.num_msg_received = 0;
+	publish_msg(&test_hsm.hsm, MSG_ID_TEST_GET_CURRENT_STATE);
+	zassert_equal(test_hsm.num_msg_received, 1);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_GET_CURRENT_STATE);
+}
+
+ZTEST(hsm_basic, test_transition_on_entry_start)
+{
+	hsm_start(&test_hsm.hsm, test_trans_on_entry_to_start);
+
+	// We expect 5 msgs:
+	// top_state: ENTRY
+	// trans_on_entry_to_start: ENTRY,EXIT
+	// sub_state, start_state: ENTRY
+	zassert_equal(test_hsm.num_msg_received, 5);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_top_state);
+	zassert_equal(test_hsm.msg_rx_data[0].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[1].state_fn, test_trans_on_entry_to_start);
+	zassert_equal(test_hsm.msg_rx_data[1].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[2].state_fn, test_trans_on_entry_to_start);
+	zassert_equal(test_hsm.msg_rx_data[2].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[3].state_fn, test_sub_state);
+	zassert_equal(test_hsm.msg_rx_data[3].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[4].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[4].msg_id, HSM_MSG_ID_ENTRY);
+
+	test_hsm.num_msg_received = 0;
+	publish_msg(&test_hsm.hsm, MSG_ID_TEST_GET_CURRENT_STATE);
+	zassert_equal(test_hsm.num_msg_received, 1);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_GET_CURRENT_STATE);
+}
+
+ZTEST(hsm_basic, test_transition_on_entry_start_double)
+{
+	hsm_start(&test_hsm.hsm, test_trans_on_entry_to_trans_on_entry_child);
+
+	// We expect 7 msgs:
+	// top_state: ENTRY
+	// trans_on_entry_to_trans_on_entry_child: ENTRY,EXIT
+	// trans_on_entry_to_start: ENTRY,EXIT
+	// sub_state, start_state: ENTRY
+	zassert_equal(test_hsm.num_msg_received, 7);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_top_state);
+	zassert_equal(test_hsm.msg_rx_data[0].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[1].state_fn,
+		      test_trans_on_entry_to_trans_on_entry_child);
+	zassert_equal(test_hsm.msg_rx_data[1].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[2].state_fn,
+		      test_trans_on_entry_to_trans_on_entry_child);
+	zassert_equal(test_hsm.msg_rx_data[2].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[3].state_fn, test_trans_on_entry_to_start);
+	zassert_equal(test_hsm.msg_rx_data[3].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[4].state_fn, test_trans_on_entry_to_start);
+	zassert_equal(test_hsm.msg_rx_data[4].msg_id, HSM_MSG_ID_EXIT);
+	zassert_equal(test_hsm.msg_rx_data[5].state_fn, test_sub_state);
+	zassert_equal(test_hsm.msg_rx_data[5].msg_id, HSM_MSG_ID_ENTRY);
+	zassert_equal(test_hsm.msg_rx_data[6].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[6].msg_id, HSM_MSG_ID_ENTRY);
+
+	test_hsm.num_msg_received = 0;
+	publish_msg(&test_hsm.hsm, MSG_ID_TEST_GET_CURRENT_STATE);
+	zassert_equal(test_hsm.num_msg_received, 1);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state);
 	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_GET_CURRENT_STATE);
 }
 
