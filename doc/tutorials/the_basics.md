@@ -19,11 +19,14 @@ int main(void)
 ## Configuration
 
 To use the publish subscribe framework it needs to be enabled via Kconfig. We also want to use a
-button as an input and an LED as an output. Add the following to your prj.conf file to enable both:
+button as an input and an LED as an output. Add the following to your prj.conf file to enable the
+components we need:
 
 ``` conf
 CONFIG_PUB_SUB=y
 CONFIG_GPIO=y
+CONFIG_PWM=y
+CONFIG_LED=y
 ```
 
 ## Define a public message
@@ -181,45 +184,32 @@ button state.
 
 ### LED initialization
 
-Add the following to initialize `led0` as an output:
+Add the following to the file:
 
 ``` C
 #include <pub_sub/pub_sub.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/device.h>
-#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/led.h>
 #include "public_msgs.h"
 
 LOG_MODULE_REGISTER(led);
 
-#define LED0_NODE DT_ALIAS(led0)
-#if !DT_NODE_HAS_STATUS(LED0_NODE, okay)
-#error "Unsupported board: led0 devicetree alias is not defined"
+#define LED_PWM_NODE_ID   DT_PATH(pwmleds)
+#define GREEN_LED_NODE_ID DT_NODELABEL(green_pwm_led)
+#define GREEN_LED_CHANNEL DT_PHA_BY_IDX(GREEN_LED_NODE_ID, pwms, 0, channel)
+
+#if !DT_NODE_HAS_STATUS(LED_PWM_NODE_ID, okay)
+#error "Unsupported board: pwmleds devicetree node is not defined"
 #endif
 
-static const struct gpio_dt_spec g_led0 = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+#if !DT_NODE_HAS_STATUS(GREEN_LED_NODE_ID, okay)
+#error "Unsupported board: green_pwm_led devicetree node is not defined"
+#endif
 
-static int init_led(void)
-{
-    if (!gpio_is_ready_dt(&g_led0)) {
-        LOG_ERR("LED device is not ready");
-    }
-
-    int ret = gpio_pin_configure_dt(&g_led0, GPIO_OUTPUT_ACTIVE);
-    if (ret < 0) {
-        LOG_ERR("LED configuration failed: %d", ret);
-    }
-
-    gpio_pin_set_dt(&g_led0, 0);
-
-    return 0;
-}
-
-SYS_INIT(init_led, APPLICATION, 0);
 ```
 
-To test the LED change the line `gpio_pin_set_dt(&g_led0, 0);` to `gpio_pin_set_dt(&g_led0, 1);`,
-this should result in the LED turning on at power up.
+This defines the node ids and channel required to control the green led.
 
 ### Receiving button state
 
@@ -233,12 +223,12 @@ First we need to declare a subscriber, add the following struct declaration:
 ``` C
 struct led_subscriber {
     PUB_SUB_ADD_SUBSCRIBER_CMPNT(PUB_MSG_ID_MAX_ID);
-    const struct gpio_dt_spec *led_gpio;
+    const struct device *pwm_leds;
 };
 ```
 
-This declares the struct `led_subscriber` as a composition of a subscriber and an LED GPIO where
-`PUB_MSG_ID_MAX_ID` is the maximum message identifier that the subscriber can subscribe to.
+This declares the struct `led_subscriber` as a composition of a subscriber and an PWM LED device
+where `PUB_MSG_ID_MAX_ID` is the maximum message identifier that the subscriber can subscribe to.
 
 #### Define and add a subscriber
 
@@ -252,7 +242,7 @@ static void led_msg_handler(struct pub_sub_subscriber *subscriber, uint16_t msg_
 static struct led_subscriber g_led0_subscriber = {
     PUB_SUB_INIT_SUBSCRIBER_CMPNT(g_led0_subscriber, &k_sys_work_q, led_msg_handler,
         PUB_MSG_ID_MAX_ID),
-    .led_gpio = &g_led0,
+    .pwm_leds = DEVICE_DT_GET(LED_PWM_NODE_ID),
 };
 PUB_SUB_SUBSCRIBER_ADD(PUB_SUB_SUBSCRIBER_CMPNT(&g_led0_subscriber), 0);
 ```
@@ -272,11 +262,17 @@ composite `g_led0_subscriber`.
 #### Subscribe to button message
 
 We want the `g_led0_subscriber` subscriber to receive the `button_state_msg` message when it is
-published so we need to subscribe to it. Add the following to the `init_led` function to subscribe
-to the message with identifier `PUB_MSG_ID_BUTTON_STATE`:
+published so we need to subscribe to it. Add the following init function to subscribe to the message
+with identifier `PUB_MSG_ID_BUTTON_STATE`:
 
 ``` C
-pub_sub_subscribe(PUB_SUB_SUBSCRIBER_CMPNT(&g_led0_subscriber), PUB_MSG_ID_BUTTON_STATE);
+static int init_led(void)
+{
+    pub_sub_subscribe(PUB_SUB_SUBSCRIBER_CMPNT(&g_led0_subscriber), PUB_MSG_ID_BUTTON_STATE);
+    return 0;
+}
+
+SYS_INIT(init_led, APPLICATION, 0);
 ```
 
 #### Handle the button message
@@ -292,11 +288,13 @@ static void led_msg_handler(struct pub_sub_subscriber *subscriber, uint16_t msg_
     switch (msg_id) {
     case PUB_MSG_ID_BUTTON_STATE: {
         const struct button_state_msg *button_state_msg = msg;
-        // state == 1 led on
-        // state == 0 led off
-        int state = button_state_msg->button_is_down ? 1 : 0;
-        gpio_pin_set_dt(led_sub->led_gpio, state);
-        LOG_INF("LED state: %d", state);
+        if (button_state_msg->button_is_down) {
+            led_on(led_sub->pwm_leds, GREEN_LED_CHANNEL);
+            LOG_INF("LED on");
+        } else {
+            led_off(led_sub->pwm_leds, GREEN_LED_CHANNEL);
+            LOG_INF("LED off");
+        }
         return;
     }
     }
@@ -315,12 +313,12 @@ Running the code should result in the following log messages when the button is 
 should turn on when the button is down:
 
 ``` log
-[00:00:03.204,803] <inf> button: Button state: 1
-[00:00:03.204,833] <inf> led: LED state: 1
-[00:00:03.771,209] <inf> button: Button state: 0
-[00:00:03.771,240] <inf> led: LED state: 0
-[00:00:04.317,382] <inf> button: Button state: 1
-[00:00:04.317,413] <inf> led: LED state: 1
-[00:00:04.872,833] <inf> button: Button state: 0
-[00:00:04.872,863] <inf> led: LED state: 0
+[00:00:14.612,243] <inf> button: Button state: 1
+[00:00:14.612,304] <inf> led: LED on
+[00:00:15.101,165] <inf> button: Button state: 0
+[00:00:15.101,226] <inf> led: LED off
+[00:00:16.200,164] <inf> button: Button state: 1
+[00:00:16.200,256] <inf> led: LED on
+[00:00:16.375,854] <inf> button: Button state: 0
+[00:00:16.375,915] <inf> led: LED off
 ```
