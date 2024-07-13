@@ -131,6 +131,27 @@ void pub_sub_delayable_msg_init(struct pub_sub_delayable_msg *delayable_msg,
 void pub_sub_delayable_msg_start(struct pub_sub_delayable_msg *delayable_msg, k_timeout_t timeout);
 
 /**
+ * @brief Start the timer on a delayable publish subscribe message using the messages's current end
+ * time as the new timeout's start time i.e. new_end_time = previous_end_time + timeout
+ *
+ * Starting a delayable message that is already running is allowed, it is the same as aborting the
+ * message and then starting it again.
+ *
+ * @warning
+ * Restarting a delayable message will not remove it from the subscriber's fifo if it has already
+ * timed out. If the message is already queued with the subscriber then this function will set the
+ * message's internal aborted state to true which can be checked with the function
+ * pub_sub_delayable_msg_was_aborted when the message is handled. pub_sub_delayable_msg_was_aborted
+ * will return true until the the message is handled by the subscriber after which the internal
+ * aborted state will be automatically cleared.
+ *
+ * @param delayable_msg Address of the message to start
+ * @param timeout The time to add to the message's current end time
+ */
+void pub_sub_delayable_msg_start_from_last(struct pub_sub_delayable_msg *delayable_msg,
+					   k_timeout_t timeout);
+
+/**
  * @brief Abort the publishing of a delayable publish subscribe message
  *
  * @warning

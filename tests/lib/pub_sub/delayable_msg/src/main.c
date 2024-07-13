@@ -822,4 +822,35 @@ ZTEST(delayable_msg, test_update_queued_msg)
 	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, &g_sub_0_msg_0);
 }
 
+ZTEST(delayable_msg, test_start_from_last)
+{
+	struct rx_msg rx_msg;
+	struct pub_sub_subscriber *subscriber_0 = PUB_SUB_SUBSCRIBER_CMPNT(&g_test_subscriber_0);
+	int64_t start_ms;
+
+	// Start a message
+	pub_sub_delayable_msg_start(PUB_SUB_DECLARED_TO_DELAYABLE_MSG(&g_sub_0_msg_0), K_MSEC(200));
+	start_ms = k_uptime_get();
+
+	// Delay some time and then start the message from its last timeout
+	k_sleep(K_MSEC(100));
+	pub_sub_delayable_msg_start_from_last(PUB_SUB_DECLARED_TO_DELAYABLE_MSG(&g_sub_0_msg_0),
+					      K_MSEC(200));
+
+	// The message should be received 400 ms after the start time
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(400)));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, &g_sub_0_msg_0);
+	zassert_equal(k_uptime_get() - start_ms, 400);
+
+	// Delay some time and then start the message from its last timeout
+	k_sleep(K_MSEC(100));
+	pub_sub_delayable_msg_start_from_last(PUB_SUB_DECLARED_TO_DELAYABLE_MSG(&g_sub_0_msg_0),
+					      K_MSEC(200));
+
+	// The message should be received 600 ms after the start time
+	zassert_ok(k_msgq_get(&g_rx_msg_queue, &rx_msg, K_MSEC(100)));
+	assert_rx_msg(rx_msg, subscriber_0, MSG_ID_TIMER_0, &g_sub_0_msg_0);
+	zassert_equal(k_uptime_get() - start_ms, 600);
+}
+
 ZTEST_SUITE(delayable_msg, NULL, delayable_msg_suite_setup, NULL, delayable_msg_after_test, NULL);
