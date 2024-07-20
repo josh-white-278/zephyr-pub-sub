@@ -17,7 +17,7 @@ enum msg_id {
 };
 
 struct transition_msg {
-	hsm_state_fn dest_state;
+	const struct hsm_state *dest_state;
 };
 
 struct msg_rx_data {
@@ -31,6 +31,10 @@ struct test_hsm {
 	int num_msg_received;
 };
 
+static enum hsm_ret test_top_state_fn(struct hsm *hsm, uint16_t msg_id, const void *msg);
+static enum hsm_ret test_start_state_fn(struct hsm *hsm, uint16_t msg_id, const void *msg);
+static enum hsm_ret test_other_state_fn(struct hsm *hsm, uint16_t msg_id, const void *msg);
+
 PUB_SUB_MEM_SLAB_ALLOCATOR_DEFINE_STATIC(test_allocator, sizeof(struct transition_msg), 32);
 
 struct test_hsm test_hsm = {
@@ -38,62 +42,11 @@ struct test_hsm test_hsm = {
 };
 PUB_SUB_SUBSCRIBER_ADD(HSM_SUB_SUBSCRIBER_CMPNT(&test_hsm), 0);
 
-static enum hsm_ret test_top_state(struct hsm *hsm, uint16_t msg_id, const void *msg)
-{
-	struct test_hsm *test_hsm = HSM_SUB_CONTAINER_FROM_HSM(hsm, struct test_hsm);
-	switch (msg_id) {
-	case MSG_ID_TEST_GET_CURRENT_STATE:
-	case MSG_ID_TEST_TOP_STATE_RX:
-		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn = test_top_state;
-		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
-		return HSM_CONSUMED();
-	case MSG_ID_TEST_TRANSITION_TOP_STATE: {
-		const struct transition_msg *transition_msg = msg;
-		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn = test_top_state;
-		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
-		return HSM_TRANSITION(transition_msg->dest_state);
-	}
-	default:
-		return HSM_TOP_STATE();
-	}
-}
+static const HSM_STATE_DEFINE(test_top_state, test_top_state_fn, NULL);
+static const HSM_STATE_DEFINE(test_start_state, test_start_state_fn, &test_top_state);
+static const HSM_STATE_DEFINE(test_other_state, test_other_state_fn, &test_top_state);
 
-static enum hsm_ret test_start_state(struct hsm *hsm, uint16_t msg_id, const void *msg)
-{
-	struct test_hsm *test_hsm = HSM_SUB_CONTAINER_FROM_HSM(hsm, struct test_hsm);
-	switch (msg_id) {
-	case MSG_ID_PUBLIC_MSG:
-	case MSG_ID_TEST_GET_CURRENT_STATE:
-	case MSG_ID_TEST_START_RX:
-		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn = test_start_state;
-		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
-		return HSM_CONSUMED();
-	case MSG_ID_TEST_TRANSITION_START_STATE: {
-		const struct transition_msg *transition_msg = msg;
-		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn = test_start_state;
-		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
-		return HSM_TRANSITION(transition_msg->dest_state);
-	}
-	default:
-		return HSM_PARENT(test_top_state);
-	}
-}
-
-static enum hsm_ret test_other_state(struct hsm *hsm, uint16_t msg_id, const void *msg)
-{
-	struct test_hsm *test_hsm = HSM_SUB_CONTAINER_FROM_HSM(hsm, struct test_hsm);
-	switch (msg_id) {
-	case MSG_ID_PUBLIC_MSG:
-	case MSG_ID_TEST_GET_CURRENT_STATE:
-		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn = test_other_state;
-		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
-		return HSM_CONSUMED();
-	default:
-		return HSM_PARENT(test_top_state);
-	}
-}
-
-void publish_msg(uint16_t msg_id)
+static void publish_msg(uint16_t msg_id)
 {
 	void *msg = pub_sub_new_msg(&test_allocator, msg_id, 0, K_NO_WAIT);
 	zassert_not_null(msg);
@@ -106,7 +59,7 @@ void publish_msg(uint16_t msg_id)
 	k_sleep(K_MSEC(1));
 }
 
-static void publish_transition_state(uint16_t msg_id, hsm_state_fn dest_state)
+static void publish_transition_state(uint16_t msg_id, const struct hsm_state *dest_state)
 {
 	struct transition_msg *msg =
 		pub_sub_new_msg(&test_allocator, msg_id, sizeof(struct transition_msg), K_NO_WAIT);
@@ -120,7 +73,7 @@ static void publish_transition_state(uint16_t msg_id, hsm_state_fn dest_state)
 static void *suite_setup(void)
 {
 	pub_sub_subscribe(HSM_SUB_SUBSCRIBER_CMPNT(&test_hsm), MSG_ID_PUBLIC_MSG);
-	hsm_start(HSM_SUB_HSM_CMPNT(&test_hsm), test_start_state);
+	hsm_start(HSM_SUB_HSM_CMPNT(&test_hsm), &test_start_state);
 	return NULL;
 }
 
@@ -138,11 +91,11 @@ ZTEST(hsm_subscriber, test_receive)
 
 	zassert_equal(test_hsm.num_msg_received, 3);
 
-	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state_fn);
 	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_START_RX);
-	zassert_equal(test_hsm.msg_rx_data[1].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[1].state_fn, test_start_state_fn);
 	zassert_equal(test_hsm.msg_rx_data[1].msg_id, MSG_ID_PUBLIC_MSG);
-	zassert_equal(test_hsm.msg_rx_data[2].state_fn, test_top_state);
+	zassert_equal(test_hsm.msg_rx_data[2].state_fn, test_top_state_fn);
 	zassert_equal(test_hsm.msg_rx_data[2].msg_id, MSG_ID_TEST_TOP_STATE_RX);
 
 	// HSM_SUB_CONTAINER_FROM_SUBSCRIBER isn't used anywhere so test it here
@@ -153,21 +106,76 @@ ZTEST(hsm_subscriber, test_receive)
 
 ZTEST(hsm_subscriber, test_transition)
 {
-	publish_transition_state(MSG_ID_TEST_TRANSITION_START_STATE, test_other_state);
+	publish_transition_state(MSG_ID_TEST_TRANSITION_START_STATE, &test_other_state);
 	publish_msg(MSG_ID_TEST_GET_CURRENT_STATE);
 	publish_msg(MSG_ID_PUBLIC_MSG);
 	publish_msg(MSG_ID_TEST_TOP_STATE_RX);
 
 	zassert_equal(test_hsm.num_msg_received, 4);
 
-	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state);
+	zassert_equal(test_hsm.msg_rx_data[0].state_fn, test_start_state_fn);
 	zassert_equal(test_hsm.msg_rx_data[0].msg_id, MSG_ID_TEST_TRANSITION_START_STATE);
-	zassert_equal(test_hsm.msg_rx_data[1].state_fn, test_other_state);
+	zassert_equal(test_hsm.msg_rx_data[1].state_fn, test_other_state_fn);
 	zassert_equal(test_hsm.msg_rx_data[1].msg_id, MSG_ID_TEST_GET_CURRENT_STATE);
-	zassert_equal(test_hsm.msg_rx_data[2].state_fn, test_other_state);
+	zassert_equal(test_hsm.msg_rx_data[2].state_fn, test_other_state_fn);
 	zassert_equal(test_hsm.msg_rx_data[2].msg_id, MSG_ID_PUBLIC_MSG);
-	zassert_equal(test_hsm.msg_rx_data[3].state_fn, test_top_state);
+	zassert_equal(test_hsm.msg_rx_data[3].state_fn, test_top_state_fn);
 	zassert_equal(test_hsm.msg_rx_data[3].msg_id, MSG_ID_TEST_TOP_STATE_RX);
 }
 
 ZTEST_SUITE(hsm_subscriber, NULL, suite_setup, before_test, NULL, NULL);
+
+static enum hsm_ret test_top_state_fn(struct hsm *hsm, uint16_t msg_id, const void *msg)
+{
+	struct test_hsm *test_hsm = HSM_SUB_CONTAINER_FROM_HSM(hsm, struct test_hsm);
+	switch (msg_id) {
+	case MSG_ID_TEST_GET_CURRENT_STATE:
+	case MSG_ID_TEST_TOP_STATE_RX:
+		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn = test_top_state_fn;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
+		return HSM_CONSUMED();
+	case MSG_ID_TEST_TRANSITION_TOP_STATE: {
+		const struct transition_msg *transition_msg = msg;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn = test_top_state_fn;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
+		return HSM_TRANSITION(transition_msg->dest_state);
+	}
+	default:
+		return HSM_PASS();
+	}
+}
+
+static enum hsm_ret test_start_state_fn(struct hsm *hsm, uint16_t msg_id, const void *msg)
+{
+	struct test_hsm *test_hsm = HSM_SUB_CONTAINER_FROM_HSM(hsm, struct test_hsm);
+	switch (msg_id) {
+	case MSG_ID_PUBLIC_MSG:
+	case MSG_ID_TEST_GET_CURRENT_STATE:
+	case MSG_ID_TEST_START_RX:
+		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn = test_start_state_fn;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
+		return HSM_CONSUMED();
+	case MSG_ID_TEST_TRANSITION_START_STATE: {
+		const struct transition_msg *transition_msg = msg;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn = test_start_state_fn;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
+		return HSM_TRANSITION(transition_msg->dest_state);
+	}
+	default:
+		return HSM_PASS();
+	}
+}
+
+static enum hsm_ret test_other_state_fn(struct hsm *hsm, uint16_t msg_id, const void *msg)
+{
+	struct test_hsm *test_hsm = HSM_SUB_CONTAINER_FROM_HSM(hsm, struct test_hsm);
+	switch (msg_id) {
+	case MSG_ID_PUBLIC_MSG:
+	case MSG_ID_TEST_GET_CURRENT_STATE:
+		test_hsm->msg_rx_data[test_hsm->num_msg_received].state_fn = test_other_state_fn;
+		test_hsm->msg_rx_data[test_hsm->num_msg_received++].msg_id = msg_id;
+		return HSM_CONSUMED();
+	default:
+		return HSM_PASS();
+	}
+}

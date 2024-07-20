@@ -8,42 +8,70 @@
 extern "C" {
 #endif
 #include <stdint.h>
+#include <zephyr/sys/__assert.h>
+
+struct hsm;
+struct hsm_state;
+typedef uintptr_t hsm_status_t;
 
 // Reserve highest msg ids for HSM private messages
 enum hsm_msg_id {
-	// Walk should never be handled by a state machine, it
-	// is used internally to find the parent states of a state
-	HSM_MSG_ID_WALK = UINT16_MAX,
 	// Entry is published to a state when it is entered
-	HSM_MSG_ID_ENTRY = HSM_MSG_ID_WALK - 1,
+	HSM_MSG_ID_ENTRY = UINT16_MAX,
 	// Exit is published to a state when it is exited
 	HSM_MSG_ID_EXIT = HSM_MSG_ID_ENTRY - 1,
 };
 
-// Do not use these return codes directly use the corresponding
+// Do not use these return codes directly, use the corresponding
 // macros defined below.
 enum hsm_ret {
+	HSM_RET_PASS,
 	HSM_RET_CONSUMED,
-	HSM_RET_PARENT,
-	HSM_RET_TOP_STATE,
 	HSM_RET_TRANSITION,
 };
 
-// Returned when a message is consumed by the current state
-#define HSM_CONSUMED()          (HSM_RET_CONSUMED)
-// Parent or top state should be the default return value of a state
-#define HSM_PARENT(_parent_fn)  (hsm->tmp_state = _parent_fn, HSM_RET_PARENT)
-#define HSM_TOP_STATE()         (hsm->tmp_state = NULL, HSM_RET_TOP_STATE)
-// Returned to transition the state machine from the current state to a new state
-#define HSM_TRANSITION(_new_fn) (hsm->tmp_state = _new_fn, HSM_RET_TRANSITION)
+// Similar to sflist, we store the return enum in the lowest 2 bits of the state pointer
+#define HSM_STATUS_RET_MASK         0x3
+#define HSM_STATUS_TO_STATE(status) ((const struct hsm_state *)(status & ~HSM_STATUS_RET_MASK))
+#define HSM_STATUS_TO_RET(status)   ((enum hsm_ret)(status & HSM_STATUS_RET_MASK))
 
-struct hsm;
-typedef enum hsm_ret (*hsm_state_fn)(struct hsm *hsm, uint16_t msg_id, const void *msg);
+// Returned when a message should be passed to the state's parent
+#define HSM_PASS()     ((hsm_status_t)HSM_RET_PASS)
+// Returned when a message is consumed by the current state
+#define HSM_CONSUMED() ((hsm_status_t)HSM_RET_CONSUMED)
+// Returned to transition from the current state to a new state
+#define HSM_TRANSITION(_new_state)                                                                 \
+	({                                                                                         \
+		__ASSERT(((uintptr_t)_new_state & HSM_STATUS_RET_MASK) == 0,                       \
+			 "State pointers must be 4 byte aligned");                                 \
+		(hsm_status_t)((uintptr_t)_new_state | HSM_RET_TRANSITION);                        \
+	})
+
+/** @brief The signature for an HSM state's message handler function
+ *
+ * @param hsm The hsm that received the message
+ * @param msg_id The id of the message received by the HSM
+ * @param msg The message received by the HSM
+ */
+typedef hsm_status_t (*hsm_state_fn)(struct hsm *hsm, uint16_t msg_id, const void *msg);
 
 struct hsm {
-	hsm_state_fn current_state;
-	hsm_state_fn tmp_state;
+	const struct hsm_state *current_state;
 };
+
+struct hsm_state {
+	const hsm_state_fn state_fn;
+	const struct hsm_state *parent;
+} __aligned(4);
+
+/** @brief Define an HSM state
+ *
+ * @param _name The name of the state
+ * @param _state_fn The state's message handler function
+ * @param _parent_state The state's parent, NULL if no parent
+ */
+#define HSM_STATE_DEFINE(_name, _state_fn, _parent_state)                                          \
+	struct hsm_state _name = {.state_fn = _state_fn, .parent = _parent_state}
 
 /**
  * @brief Start an HSM
@@ -54,7 +82,7 @@ struct hsm {
  * @param hsm Address of the HSM
  * @param initial_state The HSM's starting state
  */
-void hsm_start(struct hsm *hsm, hsm_state_fn initial_state);
+void hsm_start(struct hsm *hsm, const struct hsm_state *initial_state);
 
 /**
  * @brief Run a message through an HSM

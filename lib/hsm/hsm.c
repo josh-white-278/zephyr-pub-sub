@@ -6,98 +6,99 @@
 #include <stddef.h>
 #include <zephyr/kernel.h>
 
-static enum hsm_ret transition_state(struct hsm *hsm, hsm_state_fn new_state);
-static enum hsm_ret null_state(struct hsm *hsm, uint16_t msg_id, const void *msg);
+static hsm_status_t transition_state(struct hsm *hsm, const struct hsm_state *new_state);
+static hsm_status_t null_state_fn(struct hsm *hsm, uint16_t msg_id, const void *msg);
 
-void hsm_start(struct hsm *hsm, hsm_state_fn initial_state)
+static const HSM_STATE_DEFINE(null_state, null_state_fn, NULL);
+
+void hsm_start(struct hsm *hsm, const struct hsm_state *initial_state)
 {
 	__ASSERT(hsm != NULL, "");
+	__ASSERT(initial_state != NULL, "");
+	__ASSERT(((uintptr_t)initial_state & HSM_STATUS_RET_MASK) == 0,
+		 "State pointers must be 4 byte aligned");
 	// To start the HSM we set the current state to the null state and then transition to the
 	// initial state. The initial state and all of its parents will receive an entry message as
 	// the null state will not be a parent of the initial state.
-	hsm->current_state = null_state;
-	enum hsm_ret ret = transition_state(hsm, initial_state);
-	while ((ret == HSM_RET_TRANSITION) && (hsm->tmp_state != hsm->current_state)) {
-		__ASSERT(hsm->tmp_state != NULL, "");
-		ret = transition_state(hsm, hsm->tmp_state);
+	hsm->current_state = &null_state;
+	hsm_status_t status = transition_state(hsm, initial_state);
+	while ((HSM_STATUS_TO_RET(status) == HSM_RET_TRANSITION) &&
+	       (HSM_STATUS_TO_STATE(status) != hsm->current_state)) {
+		__ASSERT(HSM_STATUS_TO_STATE(status) != NULL, "");
+		status = transition_state(hsm, HSM_STATUS_TO_STATE(status));
 	}
 }
 
 void hsm_run(struct hsm *hsm, uint16_t msg_id, const void *msg)
 {
-	enum hsm_ret ret;
-	hsm->tmp_state = hsm->current_state;
+	hsm_status_t status;
+	const struct hsm_state *tmp_state = hsm->current_state;
+	__ASSERT(tmp_state != NULL, "");
 	do {
-		__ASSERT(hsm->tmp_state != NULL, "");
-		ret = hsm->tmp_state(hsm, msg_id, msg);
-	} while (ret == HSM_RET_PARENT);
+		status = tmp_state->state_fn(hsm, msg_id, msg);
+		tmp_state = tmp_state->parent;
+	} while ((HSM_STATUS_TO_RET(status) == HSM_RET_PASS) && (tmp_state != NULL));
 
-	while ((ret == HSM_RET_TRANSITION) && (hsm->tmp_state != hsm->current_state)) {
-		__ASSERT(hsm->tmp_state != NULL, "");
-		ret = transition_state(hsm, hsm->tmp_state);
+	while ((HSM_STATUS_TO_RET(status) == HSM_RET_TRANSITION) &&
+	       (HSM_STATUS_TO_STATE(status) != hsm->current_state)) {
+		__ASSERT(HSM_STATUS_TO_STATE(status) != NULL, "");
+		status = transition_state(hsm, HSM_STATUS_TO_STATE(status));
 	}
 }
 
-static enum hsm_ret transition_state(struct hsm *hsm, hsm_state_fn new_state)
+static hsm_status_t transition_state(struct hsm *hsm, const struct hsm_state *new_state)
 {
-	enum hsm_ret ret;
+	hsm_status_t status;
 	ssize_t common_parent_index = -1;
-	hsm_state_fn parents[CONFIG_HSM_MAX_NESTED_STATES];
-	ssize_t new_state_num_parents = -1;
+	const struct hsm_state *parents[CONFIG_HSM_MAX_NESTED_STATES];
+	ssize_t new_state_num_parents = 0;
 
 	// Collect the new state's parents
-	hsm->tmp_state = new_state;
-	do {
-		__ASSERT(hsm->tmp_state != NULL, "");
-		ret = hsm->tmp_state(hsm, HSM_MSG_ID_WALK, NULL);
-		__ASSERT((ret == HSM_RET_PARENT) || (ret == HSM_RET_TOP_STATE),
-			 "Walk message must be ignored");
+	const struct hsm_state *tmp_state = new_state->parent;
+	while ((tmp_state != NULL) && (new_state_num_parents < ARRAY_SIZE(parents))) {
+		__ASSERT(((uintptr_t)tmp_state & HSM_STATUS_RET_MASK) == 0,
+			 "State pointers must be 4 byte aligned");
+		parents[new_state_num_parents] = tmp_state;
 		new_state_num_parents++;
 		// Check if the current state is a parent of the new state
-		if (hsm->tmp_state == hsm->current_state) {
-			common_parent_index = new_state_num_parents;
+		if (tmp_state == hsm->current_state) {
+			common_parent_index = new_state_num_parents - 1;
+			break;
 		}
-		parents[new_state_num_parents] = hsm->tmp_state;
-	} while ((ret == HSM_RET_PARENT) && (common_parent_index == -1) &&
-		 (new_state_num_parents < (ARRAY_SIZE(parents) - 1)));
+		tmp_state = tmp_state->parent;
+	}
 
 	// If common_parent_index is still -1 then the current state is not a parent of the new
 	// state. Therefore we need to send EXIT messages to the current state and all of its
 	// parents until we find a common parent or run out of parents
 	if (common_parent_index == -1) {
 		size_t nest_count = 0;
-		hsm->tmp_state = hsm->current_state;
+		tmp_state = hsm->current_state;
 		do {
-			__ASSERT(hsm->tmp_state != NULL, "");
-			ret = hsm->tmp_state(hsm, HSM_MSG_ID_EXIT, NULL);
-			__ASSERT(ret != HSM_RET_TRANSITION, "Can not transition from exit");
-			// if the current state returns CONSUMED then send a WALK to get the parent
-			// state
-			if (ret == HSM_RET_CONSUMED) {
-				__ASSERT(hsm->tmp_state != NULL, "");
-				ret = hsm->tmp_state(hsm, HSM_MSG_ID_WALK, NULL);
-				__ASSERT((ret == HSM_RET_PARENT) || (ret == HSM_RET_TOP_STATE),
-					 "Walk message must be ignored");
+			// Exit the current state
+			status = tmp_state->state_fn(hsm, HSM_MSG_ID_EXIT, NULL);
+			__ASSERT(HSM_STATUS_TO_RET(status) != HSM_RET_TRANSITION,
+				 "Can not transition from exit");
+			// Move to the next parent
+			tmp_state = tmp_state->parent;
+			if (tmp_state == NULL) {
+				break;
 			}
-			// Check all of the new state's parents to see if the current parent is
-			// common
-			if (ret == HSM_RET_PARENT) {
-				for (size_t i = 0; i < new_state_num_parents; i++) {
-					if (parents[i] == hsm->tmp_state) {
-						common_parent_index = i;
-					}
+			// Check all of the new state's parents to see if the next parent is common
+			for (size_t i = 0; i < new_state_num_parents; i++) {
+				if (parents[i] == tmp_state) {
+					common_parent_index = i;
+					break;
 				}
 			}
 			nest_count++;
-			// Once we hit either a non-parent return or a common parent then we can
-			// stop sending EXIT messages
-		} while ((ret == HSM_RET_PARENT) && (common_parent_index == -1) &&
-			 (nest_count < CONFIG_HSM_MAX_NESTED_STATES));
+		} while ((common_parent_index < 0) &&
+			 (nest_count < CONFIG_HSM_MAX_NESTED_STATES + 1));
 	}
 
 	// If common_parent_index is still -1 then there is no common parent so just send ENTRY to
 	// all of the new state's parents
-	if (common_parent_index == -1) {
+	if (common_parent_index < 0) {
 		common_parent_index = new_state_num_parents;
 	}
 
@@ -107,22 +108,21 @@ static enum hsm_ret transition_state(struct hsm *hsm, hsm_state_fn new_state)
 	// that parent state.
 	for (ssize_t i = common_parent_index - 1; i >= 0; i--) {
 		__ASSERT(parents[i] != NULL, "");
-		ret = parents[i](hsm, HSM_MSG_ID_ENTRY, NULL);
-		if (ret == HSM_RET_TRANSITION) {
+		status = parents[i]->state_fn(hsm, HSM_MSG_ID_ENTRY, NULL);
+		if (HSM_STATUS_TO_RET(status) == HSM_RET_TRANSITION) {
 			// Transitioning from an entry, the current state becomes the state we just
 			// entered and we return early
 			hsm->current_state = parents[i];
-			return ret;
+			return status;
 		}
 	}
-	__ASSERT(new_state != NULL, "");
-	ret = new_state(hsm, HSM_MSG_ID_ENTRY, NULL);
+	status = new_state->state_fn(hsm, HSM_MSG_ID_ENTRY, NULL);
 	// Finally, update the current state to be the new state
 	hsm->current_state = new_state;
-	return ret;
+	return status;
 }
 
-static enum hsm_ret null_state(struct hsm *hsm, uint16_t msg_id, const void *msg)
+static hsm_status_t null_state_fn(struct hsm *hsm, uint16_t msg_id, const void *msg)
 {
-	return HSM_TOP_STATE();
+	return HSM_PASS();
 }
