@@ -1,0 +1,7 @@
+sample:
+  name: Tutorial - Delayable Message
+tests:
+  samples.tutorials.delayable_msg:
+    tags: pub_sub
+    integration_platforms:
+      - nrf52840dongle_nrf52840
